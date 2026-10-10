@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Operational due diligence for lenders: agent investigates, tools compute, policy decides."
 requires-python = ">=3.12"
 dependencies = [
+    "boto3>=1.35",
     "openpyxl>=3.1.5",
     "psycopg[binary]>=3.2",
     "pyyaml>=6.0",
@@ -43,3 +44,7 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.mypy]
 strict = true
 files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["boto3", "boto3.*", "botocore", "botocore.*"]
+ignore_missing_imports = true
