@@ -14,6 +14,7 @@ import json
 import os
 import resource
 import signal
+import sqlite3
 import sys
 import threading
 import time
@@ -152,6 +153,22 @@ def _install_audit_hook(workdir: str, snapshot: str, read_roots: tuple[str, ...]
             if realpath(path) == snapshot:
                 return
         block("sqlite3.connect", "open only SNAPSHOT_DB as file:<path>?mode=ro with uri=True")
+
+    def deny_attach(action: int, *_: Any) -> int:
+        # ATTACH opens or creates arbitrary files at the C level, invisible to the "open" event.
+        return sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_ATTACH else sqlite3.SQLITE_OK
+
+    raw_connect = sqlite3.connect
+
+    def guarded_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        # Defence in depth only: code calling sqlite3.Connection(...) directly, or
+        # set_authorizer(None), gets past this. Production isolation is the no-egress task.
+        conn: sqlite3.Connection = raw_connect(*args, **kwargs)
+        conn.set_authorizer(deny_attach)
+        conn.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED, 0)
+        return conn
+
+    sqlite3.connect = guarded_connect  # type: ignore[assignment]
 
     def hook(event: str, args: tuple[Any, ...]) -> None:
         if event == "open":

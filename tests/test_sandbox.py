@@ -177,3 +177,16 @@ def test_tempdir_removed(snapshot: Path) -> None:
 def test_missing_snapshot(tmp_path: Path) -> None:
     res = run("RESULT = 1", tmp_path / "nope.db")
     assert res.error is not None and res.result is None
+
+
+def test_sqlite_attach_is_denied(snapshot: Path, tmp_path: Path) -> None:
+    target = tmp_path / "escape.sqlite"
+    via_snapshot = f"c = {OPEN_RO}\nc.execute(\"ATTACH DATABASE '{target}' AS x\")\nRESULT = 1\n"
+    res = run("import sqlite3\n" + via_snapshot, snapshot)
+    assert res.result is None and res.error, res
+    via_memory = (
+        f"import sqlite3\nsqlite3.connect(':memory:').execute(\"ATTACH '{target}' AS x\")\n"
+    )
+    res = run(via_memory, snapshot)
+    assert res.error, res
+    assert not target.exists()
