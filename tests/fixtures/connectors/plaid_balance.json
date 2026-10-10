@@ -1,0 +1,20 @@
+{
+  "accounts": [
+    {
+      "account_id": "acct-1",
+      "balances": {
+        "available": 4100.25,
+        "current": 4200.25,
+        "iso_currency_code": "USD",
+        "limit": null
+      },
+      "mask": "0000",
+      "name": "Business Checking",
+      "type": "depository"
+    }
+  ],
+  "item": {
+    "item_id": "item-1"
+  },
+  "request_id": "req-bal-1"
+}
