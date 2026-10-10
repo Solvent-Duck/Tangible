@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "workbench",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["TANGIBLE_DEV_AUTH=1", "TANGIBLE_EVIDENCE_DIR=.evidence", "uv", "run", "tangible-workbench"],
+      "port": 8000
+    }
+  ]
+}
