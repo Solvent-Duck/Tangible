@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from importlib import resources
 
 PROMPT_HASHES: dict[str, str] = {
+    "document_reader@v1": "e73cd532015c3f4ecc0414b65f79bf9ea8676c50e3c7a4ce2f4668ed2fa2741f",
     "system@v1": "fe46c1908321d9fe5eb3c6be51aa347258abcebb9a9a6583c997ce9c503e2243",
 }
 
