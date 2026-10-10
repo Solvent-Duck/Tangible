@@ -143,6 +143,34 @@ class Application:
     evidence: EvidenceRef | None = None
 
 
+@dataclass(frozen=True)
+class StatementLine:
+    posted_on: date
+    amount: Decimal  # positive; direction gives the sign
+    direction: Literal["in", "out"]
+    description: str
+
+
+@dataclass(frozen=True)
+class Statement:
+    """Fields extracted from an uploaded bank statement (untrusted until reconciled).
+
+    observed_at is when the extraction ran; evidence points at the uploaded file's pull.
+    file_traits holds PDF metadata (producer, creation/modification dates, fonts) as strings.
+    """
+
+    source_ref: str
+    account_ref: str
+    period_start: date
+    period_end: date
+    opening_balance: Decimal | None
+    closing_balance: Decimal | None
+    lines: tuple[StatementLine, ...]
+    file_traits: tuple[tuple[str, str], ...]
+    observed_at: datetime
+    evidence: EvidenceRef | None = None
+
+
 def _known[R: Revisable](rows: Iterable[R], as_of: datetime) -> tuple[R, ...]:
     known = known_as_of(rows, as_of, key=lambda r: r.source_ref)
     return tuple(sorted(known, key=lambda r: (r.observed_at, r.source_ref)))
@@ -161,6 +189,7 @@ class Ledger:
     account_balances: tuple[AccountBalance, ...] = ()
     connections: tuple[Connection, ...] = ()
     applications: tuple[Application, ...] = ()
+    statements: tuple[Statement, ...] = ()
 
     @property
     def application(self) -> Application | None:
@@ -186,4 +215,5 @@ class Ledger:
             account_balances=_known(self.account_balances, as_of),
             connections=_known(self.connections, as_of),
             applications=_known(self.applications, as_of),
+            statements=_known(self.statements, as_of),
         )

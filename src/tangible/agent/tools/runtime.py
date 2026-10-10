@@ -15,10 +15,12 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from tangible.agent.llm import ModelClient
 from tangible.agent.snapshot import SnapshotInfo, build_snapshot
 from tangible.db.cases import Case
 from tangible.db.repo import load_ledger
 from tangible.db.session import Conn
+from tangible.evidence.store import EvidenceStore
 from tangible.ledger.types import Ledger
 from tangible.policy import Policy
 
@@ -39,6 +41,11 @@ class ToolContext:
     metric_set_id: str
     check_set_id: str
     verifier: Verifier | None = None
+    # Wave 3: read_document runs a separate, tool-less model call over files in the store;
+    # web_lookup goes through an allow-listed provider. None = tool unavailable.
+    document_client: ModelClient | None = None
+    evidence_store: EvidenceStore | None = None
+    web_provider: Any = None
 
 
 ToolFn = Callable[[ToolContext, dict[str, Any]], Any]
@@ -85,6 +92,10 @@ def open_context(
     policy: Policy,
     workdir: Path,
     verifier: Verifier | None = None,
+    *,
+    document_client: ModelClient | None = None,
+    evidence_store: EvidenceStore | None = None,
+    web_provider: Any = None,
 ) -> ToolContext:
     """Load the borrower's ledger, freeze the as-of view into a snapshot under `workdir`."""
     if policy.parsed is None:
@@ -95,6 +106,7 @@ def open_context(
     return ToolContext(
         conn, case, ledger, known, snapshot,
         policy.parsed.metric_set, policy.parsed.check_set, verifier,
+        document_client, evidence_store, web_provider,
     )  # fmt: skip
 
 

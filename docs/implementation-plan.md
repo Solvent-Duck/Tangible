@@ -114,7 +114,7 @@ block); `*` = append-only trigger.
 - **A finding's review state comes from its latest `underwriter_action`; `finding.status`
   is never updated.** This keeps review append-only.
 
-Migration numbers reserved for later waves: `0003` workbench auth/users, `0004` connectors.
+Migration numbers reserved for later waves: `0003` documents (WP3B), `0004` workbench auth/users, `0005` connectors.
 
 **Exit:** `make check` green, contracts committed. Coordinator writes the Wave 1 briefs.
 
@@ -167,9 +167,9 @@ historical file, run through 1A (or a new CSV adapter if their format differs).
 
 | WP | Owns | Builds |
 | --- | --- | --- |
-| **4A Workbench API** | `api/`, migration `0003` | FastAPI app: cases (scoped to the assigned analyst), plan approve/edit, findings review (accept / reject / send back with a question), borrower-question approval, sign (→ freeze), trace view (finding → tool calls → evidence ref → raw line). Audit log on every view and export. Auth: OIDC stub with lender_underwriter, credit_admin and analyst roles. |
+| **4A Workbench API** | `api/`, migration `0004` | FastAPI app: cases (scoped to the assigned analyst), plan approve/edit, findings review (accept / reject / send back with a question), borrower-question approval, sign (→ freeze), trace view (finding → tool calls → evidence ref → raw line). Audit log on every view and export. Auth: OIDC stub with lender_underwriter, credit_admin and analyst roles. |
 | **4B Workbench UI** | `web/` | Server-rendered (Jinja + htmx) screens for the API above. No SPA. |
-| **4C Connectors + evidence store** | `connectors/`, migration `0004` | Rutter-or-Codat and Plaid adapters. Pull → raw JSON to the evidence store (S3 Object Lock in governance mode; the local store from 1A in dev) → evidence_pull → normalised ledger rows with locators. Consent and revocation drive the `connection` rows. Tokens go through a secrets interface (Secrets Manager in prod), never logged. Tested on recorded sandbox fixtures. |
+| **4C Connectors + evidence store** | `connectors/`, migration `0005` | Rutter-or-Codat and Plaid adapters. Pull → raw JSON to the evidence store (S3 Object Lock in governance mode; the local store from 1A in dev) → evidence_pull → normalised ledger rows with locators. Consent and revocation drive the `connection` rows. Tokens go through a secrets interface (Secrets Manager in prod), never logged. Tested on recorded sandbox fixtures. |
 
 Not in this plan, matching the build-plan exclusions: AWS infra-as-code, Akamai config,
 SOC 2 controls, production hardening, and connectors beyond the unified API and Plaid.

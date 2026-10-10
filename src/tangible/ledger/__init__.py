@@ -10,6 +10,8 @@ from tangible.ledger.types import (
     Order,
     Payout,
     Refund,
+    Statement,
+    StatementLine,
     known_as_of,
 )
 
@@ -25,5 +27,7 @@ __all__ = [
     "Order",
     "Payout",
     "Refund",
+    "Statement",
+    "StatementLine",
     "known_as_of",
 ]
