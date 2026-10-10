@@ -8,8 +8,15 @@ from pathlib import Path
 
 from tangible.agent.llm import ModelClient, Pricing, client_from_env
 from tangible.config import database_url
+from tangible.secrets import EnvSecrets, SecretStore
 
 _DEFAULT_POLICY = Path(__file__).resolve().parents[3] / "policies" / "default.yaml"
+
+
+def _opt_bool(value: str | None) -> bool | None:
+    if value is None or value == "":
+        return None
+    return value.strip().lower() not in ("0", "false", "no", "off")
 
 
 @dataclass(frozen=True)
@@ -23,6 +30,31 @@ class Settings:
     # (none -> NullClient), so the app runs with no model configured.
     client_factory: Callable[[], ModelClient] = client_from_env
     max_upload_bytes: int = 25 * 1024 * 1024
+    # --- OIDC (auth_mode == "oidc"). One IdP per deployment is assumed.
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    # A SecretStore ref (e.g. `env:OIDC_SECRET`), never the secret itself.
+    oidc_client_secret_ref: str | None = None
+    oidc_audience: str | None = None  # API token audience; defaults to the client id
+    oidc_redirect_uri: str | None = None
+    oidc_scopes: str = "openid email profile"
+    oidc_tenant_claim: str = "tangible_tenant"
+    # HMAC key for session cookies (>= 32 bytes). Excluded from repr so it never reaches logs.
+    session_secret: str | None = field(default=None, repr=False)
+    session_hours: float = 8.0
+    cookie_secure: bool | None = None  # None: on in oidc mode, off in dev mode
+    # Test-only: permit http:// issuer/endpoints. Deliberately not readable from the environment.
+    oidc_allow_insecure_http: bool = False
+    secret_store: SecretStore = field(default_factory=EnvSecrets, repr=False)
+
+    @property
+    def auth_mode(self) -> str:
+        """ "dev" only when TANGIBLE_DEV_AUTH=1 (dev_auth); otherwise "oidc"."""
+        return "dev" if self.dev_auth else "oidc"
+
+    @property
+    def secure_cookies(self) -> bool:
+        return self.cookie_secure if self.cookie_secure is not None else not self.dev_auth
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -32,6 +64,16 @@ class Settings:
             evidence_dir=Path(env.get("TANGIBLE_EVIDENCE_DIR", "var/evidence")),
             policy_path=Path(env.get("TANGIBLE_POLICY_PATH", str(_DEFAULT_POLICY))),
             dev_auth=env.get("TANGIBLE_DEV_AUTH") == "1",
+            oidc_issuer=env.get("TANGIBLE_OIDC_ISSUER") or None,
+            oidc_client_id=env.get("TANGIBLE_OIDC_CLIENT_ID") or None,
+            oidc_client_secret_ref=env.get("TANGIBLE_OIDC_CLIENT_SECRET_REF") or None,
+            oidc_audience=env.get("TANGIBLE_OIDC_AUDIENCE") or None,
+            oidc_redirect_uri=env.get("TANGIBLE_OIDC_REDIRECT_URI") or None,
+            oidc_scopes=env.get("TANGIBLE_OIDC_SCOPES") or "openid email profile",
+            oidc_tenant_claim=env.get("TANGIBLE_OIDC_TENANT_CLAIM") or "tangible_tenant",
+            session_secret=env.get("TANGIBLE_SESSION_SECRET") or None,
+            session_hours=float(env.get("TANGIBLE_SESSION_HOURS", "8")),
+            cookie_secure=_opt_bool(env.get("TANGIBLE_COOKIE_SECURE")),
             pricing=Pricing(
                 Decimal(env.get("TANGIBLE_PRICE_IN_PER_MTOK", "0")),
                 Decimal(env.get("TANGIBLE_PRICE_OUT_PER_MTOK", "0")),

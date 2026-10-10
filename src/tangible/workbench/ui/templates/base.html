@@ -18,7 +18,7 @@
   </nav>
   {% if p %}
   <span class="who">{{ p.subject }} ({{ p.role }})</span>
-  {% if has_cookie %}<form method="post" action="/dev/logout" class="inline"><button>Sign out</button></form>{% endif %}
+  {% if signout %}<form method="post" action="{{ signout }}" class="inline"><button>Sign out</button></form>{% endif %}
   {% endif %}
 </header>
 <main id="main">

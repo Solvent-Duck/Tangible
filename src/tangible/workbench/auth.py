@@ -1,14 +1,14 @@
 """Authentication: who is calling, as which role, in which tenant.
 
-v1 is a dev stub that trusts two headers. It is NOT safe outside development, so the app refuses
-to start with it unless TANGIBLE_DEV_AUTH=1. The production path is the `OidcAuthenticator`
-interface below.
+Two modes. Dev (TANGIBLE_DEV_AUTH=1) trusts two headers and is NOT safe outside development.
+OIDC (the default) verifies bearer JWTs for the API (`OidcAuthenticator`) and uses an
+authorization-code login for the UI (see `oidc.py`). Roles always come from app_user.
 """
 
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from tangible.db.session import tenant_session
 
@@ -57,13 +57,68 @@ class DevHeaderAuthenticator:
         return Principal(subject, tenant, str(row[0]), row[1])
 
 
-class OidcAuthenticator:
-    """Production authentication.
+def lookup_principal(conninfo: str, tenant: str, subject: str) -> Principal:
+    """Resolve (tenant, subject) to a Principal from app_user. The role always comes from the
+    database. No auto-provisioning: an unknown subject is unauthenticated."""
+    with tenant_session(conninfo, tenant) as conn:
+        row = conn.execute(
+            "SELECT id, role FROM app_user WHERE subject = %s", (subject,)
+        ).fetchone()
+    if row is None:
+        raise Unauthenticated("unknown user")
+    return Principal(subject, tenant, str(row[0]), row[1])
 
-    TODO(OIDC): verify the bearer JWT against the lender IdP's JWKS (issuer, audience, expiry),
-    map the verified `sub` and tenant claim to an app_user row, and return a Principal. Until this
-    is implemented the workbench must only run with dev auth on a developer machine.
+
+def principal_from_claims(conninfo: str, tenant_claim: str, claims: Mapping[str, Any]) -> Principal:
+    """Map verified token claims to a Principal. The tenant comes from `tenant_claim` (a UUID);
+    `sub` is stored as app_user.subject (one IdP per deployment is assumed, so it is not
+    issuer-qualified). Nothing but identity is read from the token: roles are never taken from
+    claims."""
+    raw_tenant = claims.get(tenant_claim)
+    sub = claims.get("sub")
+    if not isinstance(raw_tenant, str) or not isinstance(sub, str) or not sub:
+        raise Unauthenticated("invalid token")
+    try:
+        tenant = str(uuid.UUID(raw_tenant))
+    except ValueError:
+        raise Unauthenticated("invalid token") from None
+    return lookup_principal(conninfo, tenant, sub)
+
+
+class ProviderError(Exception):
+    """The identity provider could not be reached or returned something unusable (HTTP 503)."""
+
+
+class TokenVerifier(Protocol):
+    def verify_jwt(
+        self, token: str, *, audience: str, nonce: str | None = None
+    ) -> Mapping[str, Any]: ...
+
+
+class OidcAuthenticator:
+    """API authentication: `Authorization: Bearer <JWT access token>`.
+
+    The token is verified against the IdP's JWKS (signature, issuer, audience, expiry), then
+    mapped to an app_user. Opaque (non-JWT) access tokens are not supported: configure the IdP to
+    issue JWT access tokens for this API.
     """
 
+    def __init__(
+        self, conninfo: str, verifier: TokenVerifier, *, audience: str, tenant_claim: str
+    ) -> None:
+        self.conninfo = conninfo
+        self.verifier = verifier
+        self.audience = audience
+        self.tenant_claim = tenant_claim
+
     def authenticate(self, headers: Mapping[str, str]) -> Principal:
-        raise NotImplementedError("OIDC verification is not implemented yet")
+        scheme, _, token = headers.get("Authorization", "").partition(" ")
+        token = token.strip()
+        if scheme.lower() != "bearer" or not token:
+            raise Unauthenticated("a Bearer token is required")
+        if token.count(".") != 2:
+            raise Unauthenticated(
+                "JWT access tokens are required (opaque tokens are not supported)"
+            )
+        claims = self.verifier.verify_jwt(token, audience=self.audience)
+        return principal_from_claims(self.conninfo, self.tenant_claim, claims)

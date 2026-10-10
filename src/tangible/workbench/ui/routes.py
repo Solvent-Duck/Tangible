@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import (
@@ -32,8 +33,22 @@ from fastapi.templating import Jinja2Templates
 from tangible.agent.llm import ModelConfigError
 from tangible.db.session import Conn, tenant_session
 from tangible.workbench import services
-from tangible.workbench.auth import TENANT_HEADER, USER_HEADER, Principal, Unauthenticated
+from tangible.workbench.auth import (
+    TENANT_HEADER,
+    USER_HEADER,
+    Principal,
+    ProviderError,
+    Unauthenticated,
+)
 from tangible.workbench.deps import SettingsDep
+from tangible.workbench.oidc import (
+    LOGIN_COOKIE,
+    LOGIN_TTL_SECONDS,
+    SESSION_COOKIE,
+    LoginStateError,
+    OidcRuntime,
+    safe_next,
+)
 from tangible.workbench.ui import queries
 
 HERE = Path(__file__).resolve().parent
@@ -88,22 +103,50 @@ def _read_cookie(secret: bytes, value: str | None) -> tuple[str, str] | None:
     return str(tenant), str(subject)
 
 
+def _login_redirect(request: Request) -> HTTPException:
+    """Unauthenticated browser request in oidc mode: go sign in, then come back."""
+    if request.headers.get("HX-Request") == "true":
+        # htmx would follow a redirect cross-origin and fail; tell it to navigate instead.
+        return HTTPException(401, "not signed in", headers={"HX-Redirect": "/auth/login"})
+    where = "/auth/login"
+    if request.method == "GET":
+        path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        if safe_next(path):
+            where += "?next=" + quote(path, safe="")
+    return HTTPException(303, headers={"Location": where})
+
+
 def ui_principal(request: Request) -> Principal:
-    """The API's authenticator, fed the identity headers or (dev auth only) the signed cookie."""
+    """The one place UI identity is resolved, for both modes.
+
+    dev: the API's header authenticator, fed identity headers or the signed dev cookie.
+    oidc: the signed session cookie, re-checked against app_user on every request.
+    """
     settings = request.app.state.settings
     auth = request.app.state.authenticator
+    runtime: OidcRuntime | None = request.app.state.oidc
+    if not settings.dev_auth:
+        try:
+            if runtime is None:  # no browser login configured: bearer/headers via the authenticator
+                p: Principal = auth.authenticate(request.headers)
+                return p
+            return runtime.principal_for_session(request.cookies.get(SESSION_COOKIE))
+        except Unauthenticated as e:
+            if runtime is not None:
+                raise _login_redirect(request) from None
+            raise HTTPException(401, str(e)) from None
+        except ProviderError:
+            raise HTTPException(503, "identity provider unavailable") from None
     headers: Mapping[str, str] = request.headers
-    if TENANT_HEADER not in headers and settings.dev_auth:
+    if TENANT_HEADER not in headers:
         ident = _read_cookie(request.app.state.ui_secret, request.cookies.get(COOKIE))
         if ident:
             headers = {TENANT_HEADER: ident[0], USER_HEADER: ident[1]}
     try:
-        p: Principal = auth.authenticate(headers)
+        p = auth.authenticate(headers)
         return p
-    except (Unauthenticated, NotImplementedError) as e:
-        if settings.dev_auth:
-            raise HTTPException(303, headers={"Location": "/dev/login"}) from None
-        raise HTTPException(401, str(e)) from None
+    except Unauthenticated:
+        raise HTTPException(303, headers={"Location": "/dev/login"}) from None
 
 
 UiPrincipal = Annotated[Principal, Depends(ui_principal)]
@@ -150,8 +193,13 @@ def render(
     request: Request, name: str, p: Principal | None, status: int = 200, **ctx: Any
 ) -> HTMLResponse:
     flash = _flash_read(request)
+    signout = None
+    if request.app.state.settings.dev_auth:
+        signout = "/dev/logout" if COOKIE in request.cookies else None
+    elif request.app.state.oidc is not None and SESSION_COOKIE in request.cookies:
+        signout = "/auth/logout"
     resp = templates.TemplateResponse(
-        request, name, {"p": p, "flash": flash, "has_cookie": COOKIE in request.cookies, **ctx},
+        request, name, {"p": p, "flash": flash, "signout": signout, **ctx},
         status_code=status,
     )  # fmt: skip
     if flash:
@@ -191,6 +239,89 @@ def guarded(fn: Callable[..., Any]) -> Callable[..., Any]:
 
 def _id(value: UUID) -> str:
     return str(value)
+
+
+# ---------------------------------------------------------------- oidc login
+
+
+def _oidc(request: Request) -> OidcRuntime:
+    runtime: OidcRuntime | None = request.app.state.oidc
+    if request.app.state.settings.dev_auth or runtime is None:
+        raise HTTPException(404)
+    return runtime
+
+
+def _auth_error(request: Request, status: int, title: str, message: str) -> Response:
+    return render(request, "error.html", None, status, title=title, message=message)
+
+
+@router.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str | None = None) -> Response:
+    if request.app.state.settings.dev_auth:
+        return RedirectResponse("/dev/login", status_code=303)
+    _oidc(request)
+    return render(request, "login.html", None, oidc=True, next=safe_next(next) or "")
+
+
+@router.get("/auth/login")
+def auth_login(request: Request, next: str | None = None) -> Response:
+    runtime = _oidc(request)
+    try:
+        url, cookie = runtime.begin_login(next)
+    except ProviderError:
+        return _auth_error(
+            request, 503, "Sign-in unavailable", "The identity provider is unavailable."
+        )
+    resp = RedirectResponse(url, status_code=303)
+    resp.set_cookie(
+        LOGIN_COOKIE, cookie, max_age=LOGIN_TTL_SECONDS, httponly=True,
+        secure=runtime.secure_cookies, samesite="lax", path="/",
+    )  # fmt: skip
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@router.get("/auth/callback")
+def auth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    iss: str | None = None,
+) -> Response:
+    runtime = _oidc(request)
+    if error:
+        return _auth_error(request, 401, "Sign-in failed", "Sign-in was not completed.")
+    try:
+        p, nxt = runtime.finish_login(request.cookies.get(LOGIN_COOKIE), state, code, iss)
+    except LoginStateError:
+        return _auth_error(
+            request, 400, "Sign-in failed", "The sign-in request is invalid or has expired."
+        )
+    except Unauthenticated:
+        resp = _auth_error(
+            request, 401, "Sign-in failed", "Sign-in failed, or your account has no access here."
+        )
+        resp.delete_cookie(LOGIN_COOKIE, path="/")
+        return resp
+    except ProviderError:
+        return _auth_error(request, 502, "Sign-in unavailable", "The identity provider failed.")
+    resp = redirect(nxt or "/", f"Signed in as {p.subject} ({p.role}).")
+    resp.set_cookie(
+        SESSION_COOKIE, runtime.issue_session(p), max_age=runtime.session_seconds, httponly=True,
+        secure=runtime.secure_cookies, samesite="lax", path="/",
+    )  # fmt: skip
+    resp.delete_cookie(LOGIN_COOKIE, path="/")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@router.post("/auth/logout")
+def auth_logout(request: Request) -> Response:
+    runtime = _oidc(request)
+    resp = RedirectResponse(runtime.logout_url() or "/auth/login", status_code=303)
+    resp.delete_cookie(SESSION_COOKIE, path="/")
+    return resp
 
 
 # ---------------------------------------------------------------- dev login

@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request
 
 from tangible.db.session import Conn, tenant_session
-from tangible.workbench.auth import Authenticator, Principal, Unauthenticated
+from tangible.workbench.auth import Authenticator, Principal, ProviderError, Unauthenticated
 from tangible.workbench.settings import Settings
 
 
@@ -20,9 +20,9 @@ def get_principal(request: Request) -> Principal:
     try:
         return auth.authenticate(request.headers)
     except Unauthenticated as e:
-        raise HTTPException(401, str(e)) from None
-    except NotImplementedError as e:
-        raise HTTPException(401, str(e)) from None
+        raise HTTPException(401, str(e), headers={"WWW-Authenticate": "Bearer"}) from None
+    except ProviderError:
+        raise HTTPException(503, "identity provider unavailable") from None
 
 
 PrincipalDep = Annotated[Principal, Depends(get_principal)]
