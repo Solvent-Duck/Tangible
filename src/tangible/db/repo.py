@@ -1,6 +1,9 @@
 """Reads and small writes against the tenant-scoped schema. Use a `tenant_session` connection."""
 
+import json
 from collections.abc import Callable
+from datetime import date
+from decimal import Decimal
 from typing import Any, Literal, cast
 
 from tangible.db.session import Conn
@@ -15,6 +18,8 @@ from tangible.ledger.types import (
     Order,
     Payout,
     Refund,
+    Statement,
+    StatementLine,
 )
 
 
@@ -87,8 +92,81 @@ def load_ledger(conn: Conn, borrower_id: str) -> Ledger:
             (b,),
         ).fetchall()
     )
+    statements = _load_statements(conn, b)
     return Ledger(
         orders=orders, refunds=refunds, payouts=payouts, bank_txns=bank, invoices=invoices,
         inventory_snapshots=stock, account_balances=balances, connections=conns,
-        applications=(),
+        applications=(), statements=statements,
     )  # fmt: skip
+
+
+def _load_statements(conn: Conn, borrower_id: str) -> tuple[Statement, ...]:
+    rows = conn.execute(
+        "SELECT source_ref, account_ref, period_start, period_end, opening_balance, "
+        "closing_balance, lines, file_traits, observed_at, evidence_pull_id FROM document_extract "
+        "WHERE borrower_id = %s ORDER BY observed_at, source_ref, id",
+        (borrower_id,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        lines = tuple(
+            StatementLine(
+                date.fromisoformat(x["posted_on"]),
+                Decimal(x["amount"]),
+                cast(Literal["in", "out"], x["direction"]),
+                x["description"],
+            )
+            for x in r[6]
+        )
+        traits = tuple(sorted((str(k), str(v)) for k, v in r[7].items()))
+        out.append(
+            Statement(
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                r[4],
+                r[5],
+                lines,
+                traits,
+                r[8],
+                EvidenceRef(str(r[9]), "statement"),
+            )  # fmt: skip
+        )
+    return tuple(out)
+
+
+def insert_statement(
+    conn: Conn,
+    tenant_id: str,
+    borrower_id: str,
+    st: Statement,
+    *,
+    extracted_by_model_call: str | None = None,
+) -> str:
+    """Append one document_extract row (a re-extraction is a new row, same source_ref)."""
+    if st.evidence is None:
+        raise ValueError("statement has no evidence pull")
+    lines = [
+        {
+            "posted_on": ln.posted_on.isoformat(),
+            "amount": str(ln.amount),
+            "direction": ln.direction,
+            "description": ln.description,
+        }
+        for ln in st.lines
+    ]
+    row = conn.execute(
+        "INSERT INTO document_extract (tenant_id, borrower_id, source_ref, evidence_pull_id, "
+        "account_ref, period_start, period_end, opening_balance, closing_balance, lines, "
+        "file_traits, extracted_by_model_call, observed_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s) RETURNING id",
+        (
+            tenant_id, borrower_id, st.source_ref, st.evidence.pull_id, st.account_ref,
+            st.period_start, st.period_end, st.opening_balance, st.closing_balance,
+            json.dumps(lines), json.dumps(dict(st.file_traits)), extracted_by_model_call,
+            st.observed_at,
+        ),
+    ).fetchone()  # fmt: skip
+    assert row
+    return str(row[0])
