@@ -168,6 +168,32 @@ class BedrockClient:
         )
 
 
+# ---------------------------------------------------------------- null client and selection
+
+
+class NullClient:
+    """Used when no model is configured: ends every turn at once, makes no tool calls."""
+
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> ModelResponse:
+        return ModelResponse(text="No model configured.", stop_reason="end_turn")
+
+
+def client_from_env() -> ModelClient:
+    """TANGIBLE_MODEL_BACKEND = none (default) | bedrock."""
+    backend = os.environ.get("TANGIBLE_MODEL_BACKEND", "none").strip().lower() or "none"
+    if backend == "none":
+        return NullClient()
+    if backend == "bedrock":
+        return BedrockClient.from_env()
+    raise ModelConfigError(f"unknown TANGIBLE_MODEL_BACKEND {backend!r} (use none or bedrock)")
+
+
 # ---------------------------------------------------------------- scripted (tests, dry runs)
 
 
