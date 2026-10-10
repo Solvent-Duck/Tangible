@@ -95,13 +95,13 @@ def freeze(
     row = conn.execute(
         "INSERT INTO assessment (tenant_id, borrower_id, as_of, evidence_set_hash, "
         "metric_set_version, policy_version, policy_hash, model_id, prompt_versions, "
-        "decision_band, suggested_limit, rules_fired, created_at, created_by) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        "decision_band, suggested_limit, rules_fired, created_at, created_by, case_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (
             case.tenant_id, case.borrower_id, case.as_of, evidence_set_hash(conn, known),
             policy.parsed.metric_set, policy.version, policy.sha256, model_id,
             json.dumps(prompt_versions or {}), result.band, result.limit,
-            json.dumps(result.rules_fired), now, created_by,
+            json.dumps(result.rules_fired), now, created_by, case.id,
         ),
     ).fetchone()  # fmt: skip
     assert row

@@ -113,22 +113,13 @@ def _load_case(conn: Conn, case_id: str) -> Case:
 
 
 def _assessment_id_for_case(conn: Conn, case_id: str) -> str | None:
-    """The assessment a case was signed into. `sign` records the link in audit_log (assessment
-    rows themselves carry no case id and are immutable)."""
-    row = conn.execute(
-        "SELECT object_id FROM audit_log WHERE action = 'sign' AND object_kind = 'assessment' "
-        "AND detail->>'case_id' = %s ORDER BY at DESC LIMIT 1",
-        (case_id,),
-    ).fetchone()
+    """The assessment a case was signed into (assessment.case_id, migration 0006)."""
+    row = conn.execute("SELECT id FROM assessment WHERE case_id = %s", (case_id,)).fetchone()
     return str(row[0]) if row else None
 
 
 def _case_for_assessment(conn: Conn, assessment_id: str) -> str | None:
-    row = conn.execute(
-        "SELECT detail->>'case_id' FROM audit_log WHERE action = 'sign' "
-        "AND object_kind = 'assessment' AND object_id = %s ORDER BY at DESC LIMIT 1",
-        (assessment_id,),
-    ).fetchone()
+    row = conn.execute("SELECT case_id FROM assessment WHERE id = %s", (assessment_id,)).fetchone()
     return str(row[0]) if row and row[0] else None
 
 
@@ -189,8 +180,7 @@ def list_cases(conn: Conn, p: Principal) -> list[dict[str, Any]]:
     else:
         rows = conn.execute(
             f"SELECT {cols} FROM case_file c JOIN borrower b ON b.id = c.borrower_id "
-            "WHERE EXISTS (SELECT 1 FROM audit_log a WHERE a.action = 'sign' "
-            "AND a.object_kind = 'assessment' AND a.detail->>'case_id' = c.id::text) "
+            "WHERE EXISTS (SELECT 1 FROM assessment a WHERE a.case_id = c.id) "
             "ORDER BY c.created_at DESC, c.id"
         ).fetchall()
     keys = (
