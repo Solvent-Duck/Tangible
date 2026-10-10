@@ -12,3 +12,7 @@ Python 3.12 + Postgres. `make check` runs lint, mypy, and tests (`make db-up` fi
 - Every tenant table has RLS on `tenant_id`; new tables must add it (see the migration's RLS block).
 - Model calls go only through `agent/llm.py`. Borrower documents and web content are untrusted data.
 - Schema changes are new numbered files in `src/tangible/db/migrations/`; don't edit applied ones.
+
+## AWS
+
+AWS project in `us-east-2` (CLI profile `tangible`; all Regional resources there). AWS Agent Toolkit guidance: [docs/aws-agent-rules.md](docs/aws-agent-rules.md). The invariants above take precedence over it.
