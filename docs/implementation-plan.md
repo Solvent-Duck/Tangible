@@ -8,19 +8,23 @@ implementation, one work package each, in their own git worktree.
 
 ## Where we are
 
+Waves 0–4 are merged on `main` and `make check` passes. Status as of Oct 10, 2026:
+
 | Area | State |
 | --- | --- |
-| Schema (`0001_init.sql`) | Done: 4 layers, RLS, immutability triggers, model-finding citation check. 5 DB tests pass. |
-| Ledger types | `Order`, `Refund`, `Ledger`, `known_as_of`. No payout, bank, invoice, inventory or balance types yet. |
-| Metrics | Registry + `net_revenue` v1, `refund_rate` v1. |
-| Checks | Registry and `FindingDraft` only. No checks. |
-| Policy | Loader (version + hash). No evaluator. `default.yaml` uses refund rate only. |
-| Agent | `ModelClient` Protocol only. |
-| Data | UCI loader done. `synthetic.py` generates the full footprint and 5 plants, but **another session is editing it right now**: mypy shows 3 errors, ruff 1, 1 test fails (`test_clean_run_reconciles`: late-payables share). |
-| Repo | No commits yet. Worktrees need a base commit. |
+| Schema | Migrations 0001–0006: four layers, RLS on every tenant table, immutability triggers, model-finding citation check, cases and agent tables, documents, workbench, connectors. |
+| Ledger | All row types (orders, refunds, payouts, bank transactions, invoices, inventory, balances, connections, applications, statements) and `known_as_of`. |
+| Metrics | 23 metrics in set `ms-2`. |
+| Checks | 17 checks in set `cs-3` (`time_gaps` v2 with UK bank holidays). |
+| Policy | Typed schema, evaluator, review state; `default.yaml` 0.2.2. |
+| Assessment | Baseline, freeze and replay. |
+| Agent | Plan, analyst approval, budgeted investigation loop with wrap-up notices; eight logged tools; analysis sandbox; number verifier; prompts `plan@v2` and `investigate@v2`. Live end-to-end smoke test passed on Bedrock (Amazon Nova 2 Lite). |
+| Backtest | Harness and report, run on a synthetic cohort. |
+| Workbench | FastAPI API and Jinja2/htmx UI with OIDC login. |
+| Connectors | Rutter and Plaid, validated against the vendor sandboxes; S3 Object Lock evidence store; Secrets Manager. |
 
-Missing: ingest into Postgres, 16 metrics, ~16 checks, policy evaluator, assessment freeze and
-replay, agent tools, agent loop, document reader, backtest harness, workbench, connectors.
+Still open: the real backtest (needs the lender's historical file) and live runs on Claude
+models (Bedrock access for the newer Claude models is pending on our AWS account).
 
 ## How the work runs
 
@@ -190,7 +194,6 @@ is the live-case milestone.
 
 ## Open items
 
-- **synthetic.py is being edited in another session.** Wave 0 waits for it to land. Owner: whoever is editing it.
 - **Ambiguities, and the defaults this plan picks:**
   - The snapshot is in-memory SQLite built from `Ledger.known`, not Postgres views. This keeps
     the time rule in one place.
@@ -198,6 +201,6 @@ is the live-case milestone.
   - Opex shows up as payables in synthetic data (ADS-*). The payables checks and metrics must
     exclude zero-term invoices, or the policy needs a rule for them. To be confirmed once
     synthetic.py settles.
-- **Real model.** Wave 3 needs Bedrock access (model id + region) for the live smoke test and
-  the 5-run spread measure. Everything before that runs on ScriptedClient.
+- **Real model.** The live smoke test passed on Amazon Nova 2 Lite in us-east-2. The 5-run
+  spread on a Claude model waits on Bedrock quota for the newer Claude models on our account.
 - **Backtest data.** The real gate is blocked on the Flex.one historical file, as the build plan says.
