@@ -1,0 +1,51 @@
+"""Versioned prompt registry. Prompts are files `<name>@v<N>.md` and are immutable once released.
+
+Editing a released prompt changes its sha256 and fails `PROMPT_HASHES` pinning; a change means a
+new `@vN` file plus a new hash entry.
+"""
+
+import hashlib
+import re
+from dataclasses import dataclass
+from importlib import resources
+
+PROMPT_HASHES: dict[str, str] = {
+    "system@v1": "fe46c1908321d9fe5eb3c6be51aa347258abcebb9a9a6583c997ce9c503e2243",
+}
+
+_FILE = re.compile(r"^(?P<name>[\w-]+)@v(?P<version>\d+)\.md$")
+
+
+@dataclass(frozen=True)
+class Prompt:
+    key: str
+    version: int
+    text: str
+    sha256: str
+
+
+def _files() -> dict[tuple[str, int], str]:
+    out: dict[tuple[str, int], str] = {}
+    for f in resources.files(__package__).iterdir():
+        m = _FILE.match(f.name)
+        if m:
+            out[(m["name"], int(m["version"]))] = f.name
+    return out
+
+
+def load_prompt(name: str, version: int) -> Prompt:
+    fname = _files().get((name, version))
+    if fname is None:
+        raise KeyError(f"no prompt {name}@v{version}")
+    data = (resources.files(__package__) / fname).read_bytes()
+    sha = hashlib.sha256(data).hexdigest()
+    if PROMPT_HASHES.get(f"{name}@v{version}") != sha:
+        raise ValueError(f"prompt {name}@v{version} does not match its pinned hash")
+    return Prompt(name, version, data.decode("utf-8"), sha)
+
+
+def latest(name: str) -> Prompt:
+    versions = [v for (n, v) in _files() if n == name]
+    if not versions:
+        raise KeyError(f"no prompt named {name}")
+    return load_prompt(name, max(versions))
