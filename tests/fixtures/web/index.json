@@ -1,0 +1,10 @@
+{
+ "https://www.trustpilot.com/search?query=Acme+Widgets+Ltd": {"file": "reviews_acme.html"},
+ "https://www.trustpilot.com/search?query=Evil+Ltd": {"file": "reviews_injection.html"},
+ "https://www.trustpilot.com/search?query=Redirect+Ltd": {"redirect": "https://evil.example.org/phish"},
+ "https://evil.example.org/phish": {"file": "reviews_acme.html"},
+ "https://www.trustpilot.com/search?query=Http+Redirect+Ltd": {"redirect": "http://www.trustpilot.com/search?query=Acme+Widgets+Ltd"},
+ "https://find-and-update.company-information.service.gov.uk/company/01234567": {"file": "reviews_acme.html"},
+ "https://find-and-update.company-information.service.gov.uk/company/01234567/officers": {"file": "reviews_acme.html"},
+ "https://find-and-update.company-information.service.gov.uk/company/01234567/charges": {"file": "reviews_acme.html"}
+}
