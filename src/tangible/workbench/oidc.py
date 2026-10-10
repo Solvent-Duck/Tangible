@@ -106,6 +106,7 @@ _REQUIRED = (
     ("oidc_issuer", "TANGIBLE_OIDC_ISSUER"),
     ("oidc_client_id", "TANGIBLE_OIDC_CLIENT_ID"),
     ("oidc_redirect_uri", "TANGIBLE_OIDC_REDIRECT_URI"),
+    ("oidc_audience", "TANGIBLE_OIDC_AUDIENCE"),
     ("session_secret", "TANGIBLE_SESSION_SECRET"),
 )
 
@@ -137,6 +138,13 @@ def config_from_settings(settings: Settings) -> OidcConfig:
         raise RuntimeError("refusing to start: TANGIBLE_SESSION_SECRET must be at least 32 bytes")
     if not settings.session_hours > 0:
         raise RuntimeError("refusing to start: TANGIBLE_SESSION_HOURS must be positive")
+    assert settings.oidc_audience
+    if settings.oidc_audience == settings.oidc_client_id:
+        # Otherwise any user's ID token (aud = client id) would also pass as an API access token.
+        raise RuntimeError(
+            "refusing to start: TANGIBLE_OIDC_AUDIENCE must be the API's own audience, "
+            "not the client id"
+        )
     if "openid" not in settings.oidc_scopes.split():
         raise RuntimeError("refusing to start: TANGIBLE_OIDC_SCOPES must include 'openid'")
     secret = None
@@ -152,7 +160,7 @@ def config_from_settings(settings: Settings) -> OidcConfig:
         issuer=settings.oidc_issuer,
         client_id=settings.oidc_client_id,
         redirect_uri=settings.oidc_redirect_uri,
-        audience=settings.oidc_audience or settings.oidc_client_id,
+        audience=settings.oidc_audience,
         scopes=settings.oidc_scopes,
         tenant_claim=settings.oidc_tenant_claim,
         client_secret=secret,

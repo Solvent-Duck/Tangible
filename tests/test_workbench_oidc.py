@@ -594,13 +594,14 @@ def test_app_refuses_to_start_without_oidc_settings(
     ok = {
         "database_url": test_db_url, "evidence_dir": tmp_path, "oidc_issuer": ISSUER,
         "oidc_client_id": CLIENT_ID, "oidc_redirect_uri": REDIRECT,
-        "session_secret": SESSION_SECRET,
+        "oidc_audience": API_AUD, "session_secret": SESSION_SECRET,
     }  # fmt: skip
     assert create_app(Settings(**ok)) is not None
     for missing, env in (
         ("oidc_issuer", "TANGIBLE_OIDC_ISSUER"),
         ("oidc_client_id", "TANGIBLE_OIDC_CLIENT_ID"),
         ("oidc_redirect_uri", "TANGIBLE_OIDC_REDIRECT_URI"),
+        ("oidc_audience", "TANGIBLE_OIDC_AUDIENCE"),
         ("session_secret", "TANGIBLE_SESSION_SECRET"),
     ):
         with pytest.raises(RuntimeError, match=env):
@@ -640,18 +641,22 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch, test_db_url: str) ->
     assert Settings.from_env().auth_mode == "dev"
 
 
-def test_audience_defaults_to_client_id(
+def test_audience_must_be_set_and_differ_from_client_id(
     stack: Stack,  # noqa: F811
-    idp: FakeIdp,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OIDC_TEST_SECRET", CLIENT_SECRET)
-    s = make_settings(stack.w, tmp_path, oidc_audience=None)
-    app = create_app(s, http_client=idp.client())
-    c = TestClient(app, base_url="https://wb.test")
-    tok = idp.token(stack.w.tenant, aud=CLIENT_ID)
-    assert c.get("/api/cases", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    with pytest.raises(RuntimeError, match="TANGIBLE_OIDC_AUDIENCE"):
+        create_app(make_settings(stack.w, tmp_path, oidc_audience=None))
+    with pytest.raises(RuntimeError, match="not the client id"):
+        create_app(make_settings(stack.w, tmp_path, oidc_audience=CLIENT_ID))
+
+
+def test_id_token_is_not_an_api_bearer(oidc: Oidc, idp: FakeIdp) -> None:
+    tok = idp.token(oidc.w.tenant, aud=API_AUD, nonce="n-123")
+    r = oidc.http.get("/api/cases", headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 401
 
 
 def test_secrets_never_appear_in_repr(oidc: Oidc) -> None:

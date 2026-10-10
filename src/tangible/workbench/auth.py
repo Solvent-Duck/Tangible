@@ -121,4 +121,7 @@ class OidcAuthenticator:
                 "JWT access tokens are required (opaque tokens are not supported)"
             )
         claims = self.verifier.verify_jwt(token, audience=self.audience)
+        if "nonce" in claims:
+            # ID tokens carry the login nonce; only access tokens may call the API.
+            raise Unauthenticated("an access token is required, not an ID token")
         return principal_from_claims(self.conninfo, self.tenant_claim, claims)
