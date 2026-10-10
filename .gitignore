@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+.env
+.DS_Store
+
+# Borrower data never goes in the repo
+data/
+*.csv

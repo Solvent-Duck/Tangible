@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tangible
+          POSTGRES_PASSWORD: tangible
+          POSTGRES_DB: tangible
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tangible" --health-interval 2s
+          --health-timeout 3s --health-retries 15
+    env:
+      TANGIBLE_DATABASE_URL: postgresql://tangible:tangible@localhost:5432/tangible
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: make check

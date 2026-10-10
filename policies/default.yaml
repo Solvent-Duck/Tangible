@@ -1,0 +1,23 @@
+# Default policy. Each lender gets its own copy; the lender's credit team owns it.
+# Steps run in order: knockout -> bands -> limit. Thresholds are starting guesses; tune on the backtest.
+version: "0.1.0"
+
+knockout:
+  # Any open finding at this severity means no decision.
+  open_finding_severity: hold
+
+bands:
+  # First band whose conditions all hold wins; evaluated A to D.
+  - band: A
+    when: { refund_rate_max: 0.03 }
+  - band: B
+    when: { refund_rate_max: 0.05 }
+  - band: C
+    when: { refund_rate_max: 0.08 }
+  - band: D
+    when: {}
+
+limit:
+  # Share of trailing-90-day net revenue, capped by band and history length.
+  net_revenue_share: { A: 0.40, B: 0.30, C: 0.20, D: 0.10 }
+  min_history_months: 6
