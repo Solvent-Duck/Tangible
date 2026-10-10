@@ -110,6 +110,19 @@ def _ddl(table: str) -> str:
     return f"CREATE TABLE {table} ({', '.join(cols)})"
 
 
+def schema_summary() -> dict[str, dict[str, Any]]:
+    """Each snapshot table's purpose and columns in storage order, as query_ledger sees them."""
+    out: dict[str, dict[str, Any]] = {}
+    for table in TABLES:
+        cols: list[str] = []
+        for name, kind in _COLUMNS[table]:
+            cols.append(name)
+            if kind != "text":
+                cols.append(minor_name(name, kind))
+        out[table] = {"about": _DESCRIPTIONS[table], "columns": [*cols, "evidence"]}
+    return out
+
+
 def build_snapshot(known: Ledger, path: Path, as_of: datetime | None = None) -> SnapshotInfo:
     """Write `known` (already time-filtered by the caller) to a SQLite file at `path`."""
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -353,7 +353,10 @@ def _questions(conn: Conn, case_id: str) -> list[dict[str, Any]]:
 def propose_plan(conn: Conn, settings: Settings, p: Principal, case_id: str) -> dict[str, Any]:
     case = _driven_case(conn, p, case_id)
     _require_status(case, "open", "planning")
-    res = _propose_plan(conn, case, settings.client_factory(), pricing=settings.pricing)
+    res = _propose_plan(
+        conn, case, settings.client_factory(),
+        policy=load_policy(settings.policy_path), pricing=settings.pricing,
+    )  # fmt: skip
     return _jd(
         {"plan_id": res.plan_id, "version": res.version, "body": res.body, "approved": False}
     )

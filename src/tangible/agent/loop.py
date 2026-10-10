@@ -16,7 +16,9 @@ from typing import Any
 
 from tangible.agent.llm import LoggedClient, ModelClient, Pricing
 from tangible.agent.prompts import Prompt, load_prompt
+from tangible.agent.snapshot import schema_summary
 from tangible.agent.tools import call_tool, open_context, tool_definitions
+from tangible.agent.tools.library import library_catalog
 from tangible.agent.tools.runtime import Verifier
 from tangible.agent.verify import verify_numbers
 from tangible.assessment import run_baseline
@@ -27,7 +29,15 @@ from tangible.db.session import Conn
 from tangible.evidence.store import EvidenceStore
 from tangible.policy import Policy
 
-PROMPT_VERSIONS = {"system": "v1", "investigate": "v1", "plan": "v1"}
+PROMPT_VERSIONS = {"system": "v1", "investigate": "v2", "plan": "v2"}
+
+# After this many consecutive steps whose tool calls all failed, the loop asks for a wrap-up.
+STALL_STEPS = 3
+WRAP_UP_NOTICE = (
+    "Notice from the investigation loop (trusted): {why} Stop calling tools now and reply with "
+    "your plain-text wrap-up: what you covered, what you found, and what could not be "
+    "established."
+)
 
 
 class PlanNotApproved(Exception):
@@ -125,18 +135,29 @@ def _insert_plan(conn: Conn, case: Case, body: dict[str, Any]) -> tuple[str, int
 
 
 def _system_text(*names: str) -> tuple[str, list[Prompt]]:
-    prompts = [load_prompt(n, 1) for n in names]
+    prompts = [load_prompt(n, int(PROMPT_VERSIONS[n].removeprefix("v"))) for n in names]
     return "\n\n".join(p.text for p in prompts), prompts
 
 
-def propose_plan(conn: Conn, case: Case, client: ModelClient, *, pricing: Pricing) -> PlanResult:
+def _catalog(policy: Policy) -> dict[str, Any]:
+    if policy.parsed is None:
+        raise ValueError("policy has no parsed spec")
+    return library_catalog(policy.parsed.metric_set, policy.parsed.check_set)
+
+
+def propose_plan(
+    conn: Conn, case: Case, client: ModelClient, *, policy: Policy, pricing: Pricing
+) -> PlanResult:
     system, prompts = _system_text("system", "plan")
     logged = LoggedClient(client, conn, case, prompts[-1], pricing)
     profile = json.dumps(borrower_profile(conn, case), indent=2)
+    library = json.dumps(_catalog(policy), indent=2)
+    content = (
+        f"Borrower profile (tool-computed):\n{profile}\n\n"
+        f"Library released for this case (checks and metrics you may plan with):\n{library}"
+    )
     resp = logged.complete(
-        system=system,
-        messages=[{"role": "user", "content": f"Borrower profile (tool-computed):\n{profile}"}],
-        tools=None,
+        system=system, messages=[{"role": "user", "content": content}], tools=None
     )
     body = _parse_plan(resp.text)
     plan_id, version = _insert_plan(conn, case, body)
@@ -209,6 +230,9 @@ def _baseline_summary(conn: Conn, case: Case, metric_ids: list[str]) -> str:
     lines += [f"- [{f.draft.severity}] {f.draft.check_key}: {f.draft.summary}" for f in rules]
     if not rules:
         lines.append("- none")
+    leads = [f.draft.check_key for f in rules if f.draft.severity in ("review", "hold")]
+    lines.append("Leads to follow up (rule findings at review or hold):")
+    lines += [f"- {k}" for k in dict.fromkeys(leads)] or ["- none"]
     prior = [f for f in findings if f.origin == "model"]
     if prior:
         lines.append("Findings already recorded by earlier agent runs:")
@@ -219,8 +243,15 @@ def _baseline_summary(conn: Conn, case: Case, metric_ids: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _first_message(plan: dict[str, Any], baseline: str, question: str | None) -> str:
-    parts = ["Approved investigation plan:", json.dumps(plan, indent=2), "", baseline]
+def _first_message(
+    plan: dict[str, Any], baseline: str, reference: dict[str, Any], question: str | None
+) -> str:
+    parts = [
+        "Approved investigation plan:", json.dumps(plan, indent=2), "", baseline, "",
+        "Reference (tool-computed): the library released for this case and the ledger "
+        "snapshot's tables and columns.",
+        json.dumps(reference, indent=2),
+    ]  # fmt: skip
     if question:
         parts += [
             "",
@@ -259,16 +290,19 @@ def investigate(
     )  # fmt: skip
     system, prompts = _system_text("system", "investigate")
     logged = LoggedClient(client, conn, case, prompts[-1], pricing)
-    tools = tool_definitions()
+    tools = tool_definitions(ctx)
     summary = _baseline_summary(conn, case, list(baseline.metric_ids.values()))
+    reference = {"library": _catalog(policy), "snapshot_tables": schema_summary()}
     messages: list[dict[str, Any]] = [
-        {"role": "user", "content": _first_message(plan, summary, question)}
+        {"role": "user", "content": _first_message(plan, summary, reference, question)}
     ]
     set_case_status(conn, case.id, "investigating")
 
     steps = 0
     model_id = ""
     stop_reason = "end_turn"
+    stalled = 0  # consecutive steps whose tool calls all failed
+    notified: set[str] = set()  # wrap-up notices already sent: "budget", "stall"
     while True:
         if steps >= case.budget_steps:
             stop_reason = "step_budget"
@@ -305,6 +339,15 @@ def investigate(
                     "is_error": is_error,
                 }
             )
+        stalled = stalled + 1 if all(r["is_error"] for r in results) else 0
+        why = None
+        if case.budget_steps - steps == 1 and "budget" not in notified:
+            why, kind = "one model step is left in this investigation's budget.", "budget"
+        elif stalled >= STALL_STEPS and "stall" not in notified:
+            why, kind = f"the last {stalled} steps returned only tool errors.", "stall"
+        if why is not None:
+            results.append({"type": "text", "text": WRAP_UP_NOTICE.format(why=why)})
+            notified.add(kind)
         messages.append({"role": "user", "content": results})
 
     cost = logged.cost.quantize(Decimal("0.000001"))

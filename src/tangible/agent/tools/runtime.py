@@ -60,6 +60,8 @@ class ToolSpec:
     input_schema: dict[str, Any]
     fn: ToolFn
     side_effect: SideEffect | None = None
+    # Narrows input_schema for one case (e.g. an enum of the keys in the pinned sets).
+    schema_for: Callable[[ToolContext], dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -79,9 +81,16 @@ def register(spec: ToolSpec) -> ToolSpec:
     return spec
 
 
-def tool_definitions() -> list[dict[str, Any]]:
+def _schema(spec: ToolSpec, ctx: ToolContext | None) -> dict[str, Any]:
+    if ctx is not None and spec.schema_for is not None:
+        return spec.schema_for(ctx)
+    return spec.input_schema
+
+
+def tool_definitions(ctx: ToolContext | None = None) -> list[dict[str, Any]]:
+    """With `ctx`, schemas are narrowed to that case (the same schemas call_tool enforces)."""
     return [
-        {"name": t.name, "description": t.description, "input_schema": t.input_schema}
+        {"name": t.name, "description": t.description, "input_schema": _schema(t, ctx)}
         for t in TOOLS.values()
     ]
 
@@ -233,7 +242,7 @@ def call_tool(ctx: ToolContext, name: str, args: Any) -> ToolResult:
     error: str | None = None
     if spec is None:
         error = f"unknown tool '{name}'"
-    elif (e := validate(args, spec.input_schema)) is not None:
+    elif (e := validate(args, _schema(spec, ctx))) is not None:
         error = f"invalid arguments: {e}"
     else:
         try:
