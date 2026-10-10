@@ -41,6 +41,7 @@ tangible-replay = "tangible.assessment.cli:main"
 tangible-backtest = "tangible.backtest.cli:main"
 tangible-workbench = "tangible.workbench.app:main"
 tangible-pull = "tangible.connectors.cli:main"
+tangible-sandbox = "tangible.connectors.sandbox:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -2,9 +2,10 @@ import json
 from datetime import date
 from decimal import Decimal
 
+import httpx
 import pytest
 
-from tangible.connectors.base import ConnectorAccount
+from tangible.connectors.base import ConnectorAccount, ConnectorError, Record
 from tangible.connectors.normalize import REMOVED, normalize
 from tangible.connectors.plaid import PlaidConnector
 from tangible.connectors.pull import load_account, run_pull
@@ -110,3 +111,31 @@ def test_modification_is_new_row_and_known_picks_revision(test_db_url: str, tmp_
         assert t1_now.evidence is not None and t1_now.evidence.pull_id == second.pull_id
         line = resolve_line(conn, store, EvidenceRef(t1_now.evidence.pull_id, "record=tx-1"))
         assert line is not None and json.loads(line)["amount"] == 27.5
+
+
+def test_new_item_not_ready_is_a_clear_error() -> None:
+    not_ready = {
+        "added": [],
+        "modified": [],
+        "removed": [],
+        "has_more": False,
+        "next_cursor": "",
+        "transactions_update_status": "NOT_READY",
+    }
+    with pytest.raises(ConnectorError, match="NOT_READY"):
+        connector(Script(httpx.Response(200, json=not_ready))).pull(ACCT, {})
+
+
+def test_only_depository_balances_become_ledger_rows() -> None:
+    def acct(aid: str, kind: str, current: int) -> Record:
+        return Record(
+            "balance", {"account_id": aid, "type": kind, "balances": {"current": current}}
+        )
+
+    rows = normalize(
+        ACCT,
+        [acct("chk", "depository", 110), acct("cc", "credit", 410), acct("loan", "loan", 65262),
+         acct("ira", "investment", 320)],
+        T0,
+    )  # fmt: skip
+    assert [r.values["account_ref"] for r in rows] == ["chk"]

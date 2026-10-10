@@ -4,7 +4,7 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from tangible.connectors.base import ConnectorAccount, ConnectorError
+from tangible.connectors.base import ConnectorAccount, ConnectorError, Record
 from tangible.connectors.normalize import normalize
 from tangible.connectors.pull import load_account, run_pull
 from tangible.connectors.rutter import RutterConnector
@@ -26,7 +26,8 @@ def connector(script: Script, streams: tuple[str, ...] = ALL) -> RutterConnector
 
 def full_script() -> Script:
     return Script(ok("rutter_orders_1.json"), ok("rutter_orders_2.json"), ok("rutter_payouts.json"),
-                  ok("rutter_invoices.json"), ok("rutter_bills.json"))  # fmt: skip
+                  ok("rutter_invoices.json"), ok("rutter_customers.json"), ok("rutter_bills.json"),
+                  ok("rutter_vendors.json"))  # fmt: skip
 
 
 def test_pagination_and_auth() -> None:
@@ -37,12 +38,15 @@ def test_pagination_and_auth() -> None:
         "/versioned/orders",
         "/versioned/payouts",
         "/versioned/accounting/invoices",
+        "/versioned/accounting/customers",
         "/versioned/accounting/bills",
+        "/versioned/accounting/vendors",
     ]
     assert "cursor" not in s.requests[0].url.params
     assert s.requests[1].url.params["cursor"] == "pg2"
     assert s.requests[0].url.params["access_token"] == TOKEN
     assert s.requests[0].headers["authorization"].startswith("Basic ")
+    assert all(r.headers["x-rutter-version"] == "2024-08-31" for r in s.requests)
     assert [r.kind for r in res.records] == [
         "order", "refund", "order", "payout", "invoice_receivable", "invoice_payable",
     ]  # fmt: skip
@@ -118,3 +122,63 @@ def test_pull_and_resolve_refund(test_db_url: str, tmp_path) -> None:
         order = next(o for o in ledger.orders if o.source_ref == "ord-1")
         assert order.evidence is not None
         assert resolve_line(conn, store, EvidenceRef(order.evidence.pull_id, "record=nope")) is None
+
+
+def _pay(amount: int, day: str) -> dict[str, object]:
+    return {"id": "p", "allocated_amount": amount, "allocated_date": f"{day}T00:00:00.000Z"}
+
+
+def _inv(id_: str, status: str, payments: list[dict[str, object]]) -> Record:
+    return Record(
+        "invoice_receivable",
+        {
+            "id": id_,
+            "status": status,
+            "total_amount": 387,
+            "issue_date": "2023-09-01T00:00:00.000Z",
+            "due_date": "2023-10-01T00:00:00.000Z",
+            "linked_payments": payments,
+        },
+    )
+
+
+def test_paid_on_derived_from_linked_payments_as_in_live_sandbox() -> None:
+    """Shapes seen in a live Rutter sandbox pull: no `paid_on`; payments are linked."""
+    rows = normalize(
+        ACCT,
+        [
+            _inv("paid", "paid", [_pay(200, "2023-09-10"), _pay(187, "2023-09-14")]),
+            _inv("part", "partially_paid", [_pay(220, "2023-09-13")]),
+            _inv("open", "open", []),
+        ],
+        T0,
+    )
+    got = {r.values["source_ref"]: r.values["paid_on"] for r in rows}
+    assert {k: str(v) for k, v in got.items()} == {
+        "paid": "2023-09-14",
+        "part": "None",
+        "open": "None",
+    }
+
+
+def test_counterparty_names_come_from_the_customer_and_vendor_directories() -> None:
+    """Live sandbox shape: invoices and bills carry only customer_id / vendor_id."""
+    day = "2026-01-01T00:00:00.000Z"
+    inv = {"id": "i1", "customer_id": "cust-9", "status": "open", "total_amount": 5,
+           "issue_date": day, "updated_at": day}  # fmt: skip
+    bill = {**inv, "id": "b1", "vendor_id": "ven-9", "customer_id": None}
+
+    def json_ok(body: dict[str, object]) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    s = Script(
+        json_ok({"invoices": [inv], "next_cursor": None}),
+        ok("rutter_customers.json"),
+        json_ok({"bills": [bill], "next_cursor": None}),
+        ok("rutter_vendors.json"),
+    )
+    res = connector(s, ("invoices", "bills")).pull(ACCT, {})
+    rows = {r.values["source_ref"]: r.values for r in normalize(ACCT, res.records, T0)}
+    assert rows["i1"]["counterparty"] == "Bills Windsurf Shop"
+    assert rows["b1"]["counterparty"] == "Bobs Burger Joint"
+    assert set(json.loads(res.raw)["streams"]) == {"invoices", "customers", "bills", "vendors"}

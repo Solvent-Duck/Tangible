@@ -95,6 +95,11 @@ class PlaidConnector:
                 extra["cursor"] = cursor
             body, text = self._post("/transactions/sync", auth, extra, known)
             tx_pages.append(text)
+            if body.get("transactions_update_status") == "NOT_READY" and not body.get(
+                "next_cursor"
+            ):
+                # A new Item has no data or cursor until Plaid's first sync finishes.
+                raise ConnectorError("POST /transactions/sync: Item not ready yet (NOT_READY)")
             for list_key, kind in (
                 ("added", "txn_added"),
                 ("modified", "txn_modified"),

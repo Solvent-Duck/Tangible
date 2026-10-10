@@ -3,9 +3,13 @@
 VERIFY AGAINST CURRENT DOCS BEFORE LIVE USE. Everything below is written from memory of Rutter's
 public docs and has never run against a real or sandbox account. Assumptions:
 
-  base URL       https://production.rutterapi.com/versioned  (sandbox host differs)
+  base URL       https://production.rutterapi.com/versioned
+                 (sandbox: https://sandbox.rutterapi.com/versioned; set RUTTER_BASE_URL)
   auth           HTTP Basic (client_id:client_secret) plus the connection's `access_token` as a
-                 query parameter on every request
+                 query parameter on every request, and an `X-Rutter-Version` header (confirmed
+                 against docs.rutter.com/try-us-out, 2026-10)
+  sandbox        QuickBooks and NetSuite only, so only the `invoices` and `bills` streams can be
+                 exercised there; no incremental sync, so `updated_at_min` is untested
   pagination     `cursor` query param in, `next_cursor` in the response body (null/absent on the
                  last page), `limit` for page size
   incremental    `updated_at_min` query param (ISO 8601, epoch ms is also accepted by Rutter in
@@ -42,6 +46,7 @@ from tangible.connectors.base import (
 from tangible.secrets import SecretStore
 
 BASE_URL = "https://production.rutterapi.com/versioned"
+API_VERSION = "2024-08-31"
 
 # stream -> (path, response list key, record kind)
 STREAMS: dict[str, tuple[str, str, str]] = {
@@ -85,13 +90,46 @@ class RutterConnector:
         self.max_pages = max_pages
         self.sleep = sleep
 
+    def _pages(
+        self, path: str, key: str, auth: tuple[str, str], token: str, watermark: str | None
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Every page of one list endpoint: (items, raw response bodies)."""
+        items: list[dict[str, Any]] = []
+        texts: list[str] = []
+        page_cursor: str | None = None
+        for _ in range(self.max_pages):
+            params: dict[str, Any] = {"access_token": token, "limit": self.page_size}
+            if watermark:
+                params["updated_at_min"] = watermark
+            if page_cursor:
+                params["cursor"] = page_cursor
+            resp = request_with_retry(
+                self.client,
+                "GET",
+                self.base_url + path,
+                params=params,
+                auth=auth,
+                headers={"X-Rutter-Version": API_VERSION},
+                secrets=(token, auth[1]),
+                sleep=self.sleep,
+            )
+            body = json_object(resp, f"GET {path}")
+            texts.append(resp.text)
+            page = body.get(key)
+            if not isinstance(page, list):
+                raise ConnectorError(f"GET {path}: response has no {key!r} list")
+            for item in page:
+                if not isinstance(item, dict) or "id" not in item:
+                    raise ConnectorError(f"GET {path}: record without an id")
+                items.append(item)
+            page_cursor = body.get("next_cursor") or None
+            if not page_cursor:
+                return items, texts
+        raise ConnectorError(f"GET {path}: more than {self.max_pages} pages")
+
     def pull(self, account: ConnectorAccount, since: Mapping[str, str]) -> PullResult:
         token = self.secrets.get(account.secret_ref)
-        cid, csecret = (
-            self.secrets.get(self.client_id_ref),
-            self.secrets.get(self.client_secret_ref),
-        )
-        known = (token, csecret)
+        auth = (self.secrets.get(self.client_id_ref), self.secrets.get(self.client_secret_ref))
         pages: dict[str, list[str]] = {}
         records: list[Record] = []
         cursors: dict[str, str] = {}
@@ -99,53 +137,41 @@ class RutterConnector:
             path, key, kind = STREAMS[stream]
             watermark = since.get(stream)
             newest = watermark
-            pages[stream] = []
-            page_cursor: str | None = None
-            for _ in range(self.max_pages):
-                params: dict[str, Any] = {"access_token": token, "limit": self.page_size}
-                if watermark:
-                    params["updated_at_min"] = watermark
-                if page_cursor:
-                    params["cursor"] = page_cursor
-                resp = request_with_retry(
-                    self.client,
-                    "GET",
-                    self.base_url + path,
-                    params=params,
-                    auth=(cid, csecret),
-                    secrets=known,
-                    sleep=self.sleep,
+            items, pages[stream] = self._pages(path, key, auth, token, watermark)
+            names: dict[str, str] = {}
+            if kind in ("invoice_receivable", "invoice_payable") and items:
+                # Invoices and bills carry only customer_id / vendor_id; the names are in the
+                # directory. Always fetched in full: it is small and names can change.
+                d_stream, d_path, d_key, name_key = (
+                    ("customers", "/accounting/customers", "customers", "customer_name")
+                    if kind == "invoice_receivable"
+                    else ("vendors", "/accounting/vendors", "vendors", "vendor_name")
                 )
-                body = json_object(resp, f"GET {path}")
-                pages[stream].append(resp.text)
-                items = body.get(key)
-                if not isinstance(items, list):
-                    raise ConnectorError(f"GET {path}: response has no {key!r} list")
-                for item in items:
-                    if not isinstance(item, dict) or "id" not in item:
-                        raise ConnectorError(f"GET {path}: record without an id")
-                    records.append(Record(kind, item))
-                    if kind == "order":
-                        # refunds are nested in their order; link them explicitly
-                        records.extend(
-                            Record(
-                                "refund",
-                                {
-                                    **r,
-                                    "order_id": item["id"],
-                                    "order_created_at": item.get("created_at"),
-                                },
-                            )
-                            for r in item.get("refunds") or []
+                people, pages[d_stream] = self._pages(d_path, d_key, auth, token, None)
+                names = {str(x["id"]): str(x[name_key]) for x in people if x.get(name_key)}
+            for item in items:
+                if names:
+                    party = item.get("customer_id") or item.get("vendor_id")
+                    if party is not None and str(party) in names:
+                        who = "customer" if kind == "invoice_receivable" else "vendor"
+                        item = {**item, who: {"id": str(party), "name": names[str(party)]}}
+                records.append(Record(kind, item))
+                if kind == "order":
+                    # refunds are nested in their order; link them explicitly
+                    records.extend(
+                        Record(
+                            "refund",
+                            {
+                                **r,
+                                "order_id": item["id"],
+                                "order_created_at": item.get("created_at"),
+                            },
                         )
-                    upd = item.get("updated_at")
-                    if isinstance(upd, str) and (newest is None or _ts(upd) > _ts(newest)):
-                        newest = upd
-                page_cursor = body.get("next_cursor") or None
-                if not page_cursor:
-                    break
-            else:
-                raise ConnectorError(f"GET {path}: more than {self.max_pages} pages")
+                        for r in item.get("refunds") or []
+                    )
+                upd = item.get("updated_at")
+                if isinstance(upd, str) and (newest is None or _ts(upd) > _ts(newest)):
+                    newest = upd
             if newest:
                 cursors[stream] = newest
         return PullResult(envelope(self.provider, pages), records, cursors)

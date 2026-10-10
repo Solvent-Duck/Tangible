@@ -132,6 +132,21 @@ def _payout(d: dict[str, Any], at: datetime, processor: str) -> LedgerRow:
     )
 
 
+def _paid_on(d: dict[str, Any]) -> date | None:
+    """Rutter has no `paid_on`. A fully paid invoice/bill (`status` paid) carries its payments in
+    `linked_payments[].allocated_date`; it was paid off on the last of them. A partly paid one is
+    not paid."""
+    if d.get("paid_on"):
+        return _day(d["paid_on"], "paid_on", False)
+    if d.get("status") != "paid":
+        return None
+    days = [
+        _day(p.get("allocated_date"), "allocated_date", False)
+        for p in d.get("linked_payments") or []
+    ]
+    return max((x for x in days if x), default=None)
+
+
 def _invoice(d: dict[str, Any], at: datetime, kind: str) -> LedgerRow:
     party = _name(d.get("customer")) or _name(d.get("vendor")) or _name(d.get("contact"))
     return LedgerRow(
@@ -143,7 +158,7 @@ def _invoice(d: dict[str, Any], at: datetime, kind: str) -> LedgerRow:
             "amount": _dec(d.get("total_amount"), "invoice total_amount"),
             "issued_on": _day(d.get("issue_date") or d.get("created_at"), "issue_date"),
             "due_on": _day(d.get("due_date"), "due_date", False),
-            "paid_on": _day(d.get("paid_on"), "paid_on", False),
+            "paid_on": _paid_on(d),
             "observed_at": at,
         },
         f"record={d['id']}",
@@ -228,7 +243,10 @@ def normalize(
         elif k in ("txn_added", "txn_modified", "txn_removed"):
             add(_txn(k, d, fetched_at))
         elif k == "balance":
-            add(_balance(d, fetched_at))
+            # account_balance is cash. Loan, credit and investment balances (amounts owed, or
+            # holdings) would corrupt cash metrics; the raw evidence still holds them.
+            if d.get("type", "depository") == "depository":
+                add(_balance(d, fetched_at))
         else:
             raise ConnectorError(f"unknown record kind {k!r}")
     return list(out.values())
