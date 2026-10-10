@@ -1,23 +1,35 @@
 # Default policy. Each lender gets its own copy; the lender's credit team owns it.
-# Steps run in order: knockout -> bands -> limit. Thresholds are starting guesses; tune on the backtest.
-version: "0.1.0"
+# Steps run in order: knockout -> bands -> review cap -> limit. Thresholds are starting guesses;
+# tune on the backtest. max/min are inclusive.
+version: "0.2.0"
+metric_set: ms-2
+check_set: cs-1
 
 knockout:
-  # Any open finding at this severity means no decision.
+  # A hold finding in these review states blocks a decision.
   open_finding_severity: hold
+  hold_states: [open, accepted]
 
 bands:
   # First band whose conditions all hold wins; evaluated A to D.
   - band: A
-    when: { refund_rate_max: 0.03 }
+    when: { refund_rate: { max: 0.03 }, gross_margin_est: { min: 0.35 }, payables_discipline: { min: 0.90 } }
   - band: B
-    when: { refund_rate_max: 0.05 }
+    when: { refund_rate: { max: 0.05 }, gross_margin_est: { min: 0.25 } }
   - band: C
-    when: { refund_rate_max: 0.08 }
+    when: { refund_rate: { max: 0.08 } }
   - band: D
     when: {}
 
+review_findings:
+  # Open or accepted review-severity findings cap the band: best possible is C.
+  cap_band_at: C
+
 limit:
-  # Share of trailing-90-day net revenue, capped by band and history length.
-  net_revenue_share: { A: 0.40, B: 0.30, C: 0.20, D: 0.10 }
-  min_history_months: 6
+  base_metric: net_revenue
+  share: { A: 0.40, B: 0.30, C: 0.20, D: 0.10 }
+  max: { A: 250000, B: 150000, C: 75000, D: 25000 }
+  history:
+    metric: history_days
+    min_days: 183
+    short_history_share_factor: 0.5
