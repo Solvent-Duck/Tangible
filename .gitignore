@@ -12,3 +12,6 @@ dist/
 # Borrower data never goes in the repo
 data/
 *.csv
+
+# Agent worktrees
+.claude/worktrees/
