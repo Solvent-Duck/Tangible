@@ -18,6 +18,8 @@ _ACTION_STATE: dict[str, ReviewState] = {
     "request_more": "open",
 }
 
+_TIE_RANK = {"reject": 0, "dispute": 1, "accept": 2, "request_more": 3}
+
 
 @dataclass(frozen=True)
 class ActionInput:
@@ -29,12 +31,12 @@ def effective_state(actions: Iterable[ActionInput]) -> ReviewState:
     """Latest relevant action (by ``at``) wins; no relevant action means ``open``.
 
     Actions that do not affect review state (override, approve_plan, sign, ...) are ignored.
-    Ties on ``at`` are broken deterministically by the action name, so the result does not
-    depend on input order: the alphabetically greatest action name wins
-    (request_more > reject > dispute > accept).
+    Ties on ``at`` are broken conservatively, so the result does not depend on input order and a
+    tie never clears a finding: request_more > accept > dispute > reject (states that keep a hold
+    blocking win over states that release it).
     """
     relevant = [a for a in actions if a.action in _ACTION_STATE]
     if not relevant:
         return "open"
-    latest = max(relevant, key=lambda a: (a.at, a.action))
+    latest = max(relevant, key=lambda a: (a.at, _TIE_RANK[a.action]))
     return _ACTION_STATE[latest.action]

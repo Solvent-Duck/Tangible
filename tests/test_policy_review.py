@@ -49,6 +49,8 @@ def test_request_more_reopens():
     )
 
 
-def test_tie_broken_by_action_name_independent_of_order():
+def test_tie_is_conservative_and_independent_of_order():
     a, b = ActionInput("accept", at(1)), ActionInput("reject", at(1))
-    assert effective_state([a, b]) == effective_state([b, a]) == "rejected"
+    assert effective_state([a, b]) == effective_state([b, a]) == "accepted"
+    c, d = ActionInput("dispute", at(1)), ActionInput("request_more", at(1))
+    assert effective_state([c, d]) == effective_state([d, c]) == "open"

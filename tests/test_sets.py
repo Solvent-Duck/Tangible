@@ -24,3 +24,17 @@ def test_check_set_with_unregistered_check_raises(monkeypatch):
 def test_unknown_set_id_raises():
     with pytest.raises(KeyError):
         metric_set("ms-999")
+
+
+def test_ms2_resolves_and_policy_metrics_are_in_it():
+    from pathlib import Path
+
+    from tangible.metrics.sets import metric_set
+    from tangible.policy import load_policy
+
+    keys = {k for k, _ in metric_set("ms-2")}
+    policy = load_policy(Path(__file__).parent.parent / "policies/default.yaml")
+    assert policy.parsed is not None and policy.parsed.metric_set == "ms-2"
+    used = {c.metric for b in policy.parsed.bands for c in b.when}
+    used |= {policy.parsed.limit.base_metric, policy.parsed.limit.history.metric}
+    assert used <= keys
