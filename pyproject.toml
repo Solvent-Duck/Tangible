@@ -29,6 +29,7 @@ packages = ["src/tangible"]
 [project.scripts]
 tangible-migrate = "tangible.db.migrate:main"
 tangible-ingest = "tangible.ingest.cli:main"
+tangible-replay = "tangible.assessment.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
