@@ -78,10 +78,17 @@ GAP = TODAY - timedelta(days=10)  # a Friday inside the window
 def test_time_gaps_fires_on_missing_weekday() -> None:
     assert GAP.weekday() == 4
     out = c.time_gaps(weekday_bank(140, skip={GAP}), AS_OF)
-    assert len(out) == 1 and out[0].severity == "review"
+    assert len(out) == 1 and out[0].severity == "info"  # one quiet day is info
     assert out[0].facts["gap_days"] == GAP.isoformat()
     assert out[0].facts["table"] == "bank_txns"
     assert out[0].evidence_refs  # the row just before the gap
+
+
+def test_time_gaps_two_days_is_review() -> None:
+    second = GAP - timedelta(days=1)  # the Thursday before
+    out = c.time_gaps(weekday_bank(140, skip={GAP, second}), AS_OF)
+    assert len(out) == 1 and out[0].severity == "review"
+    assert out[0].facts["gap_count"] == "2"
 
 
 def test_time_gaps_rate_boundary() -> None:

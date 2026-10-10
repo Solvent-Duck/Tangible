@@ -15,6 +15,7 @@ GAP_WINDOW_DAYS: Final = 90  # time_gaps: look-back for gap days
 GAP_RATE_WEEKS: Final = 8  # time_gaps: same-weekday history that sets the expected pattern
 GAP_MIN_ACTIVE_RATE: Final = Decimal("0.95")  # share of those weekdays that must have had rows
 GAP_LISTED_DAYS: Final = 10  # gap days named in the summary (all are in facts)
+GAP_REVIEW_MIN_DAYS: Final = 2  # one quiet day is info (holidays, slow days); two or more is review
 STALE_AFTER: Final = timedelta(days=7)  # stale_connection: longest quiet spell tolerated
 COVERAGE_WINDOW_DAYS: Final = 90
 COVERAGE_MAX_UNCONNECTED_SHARE: Final = Decimal("0.01")
@@ -58,7 +59,8 @@ def _dated_rows(k: Ledger) -> dict[str, list[tuple[date, EvidenceRef | None]]]:
 def time_gaps(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     """A business day with no rows where the same weekday was active in >= 95% of the previous
     8 weeks. Only complete days (the day of `as_of` is excluded) before the source's last row are
-    judged: silence after the last row is staleness, which stale_connection covers."""
+    judged: silence after the last row is staleness, which stale_connection covers. A single gap
+    day is info; GAP_REVIEW_MIN_DAYS or more is review."""
     k = ledger.known(as_of)
     last = as_of.date() - timedelta(days=1)
     drafts: list[FindingDraft] = []
@@ -92,7 +94,7 @@ def time_gaps(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
             FindingDraft(
                 check_key="time_gaps",
                 check_version=1,
-                severity="review",
+                severity="review" if len(gaps) >= GAP_REVIEW_MIN_DAYS else "info",
                 pillar="integrity",
                 summary=(
                     f"{table} has no rows on {len(gaps)} weekday(s) in the last "

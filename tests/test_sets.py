@@ -6,7 +6,7 @@ from tangible.metrics.sets import METRIC_SETS, metric_set
 
 def test_released_sets_resolve():
     assert metric_set("ms-1") == (("net_revenue", 1), ("refund_rate", 1))
-    assert check_set("cs-1") == ()
+    assert len(check_set("cs-1")) == 15
 
 
 def test_metric_set_with_unregistered_metric_raises(monkeypatch):
