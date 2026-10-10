@@ -1,0 +1,31 @@
+{
+  "orders": [
+    {
+      "id": "ord-1",
+      "order_number": "#ord-1",
+      "currency_code": "USD",
+      "subtotal": 100.0,
+      "total_discount": 10.0,
+      "total_tax": 7.2,
+      "total_amount": 97.2,
+      "created_at": "2026-03-01T10:00:00.000Z",
+      "updated_at": "2026-03-01T10:00:00.000Z",
+      "customer": {
+        "id": "cust-ord-1",
+        "email": null
+      },
+      "refunds": [
+        {
+          "id": "ref-1",
+          "amount": 20.0,
+          "created_at": "2026-03-05T09:00:00.000Z",
+          "reason": "damaged"
+        }
+      ]
+    }
+  ],
+  "next_cursor": "pg2",
+  "connection": {
+    "id": "conn-1"
+  }
+}

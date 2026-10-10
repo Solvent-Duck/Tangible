@@ -6,6 +6,7 @@ Idempotent: a pull whose (borrower_id, sha256) already exists is skipped along w
 """
 
 import csv
+import hashlib
 import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
@@ -102,6 +103,40 @@ def _pull_exists(conn: Conn, borrower_id: str, sha: str) -> bool:
     )
 
 
+_TRAILING = ("observed_at", "evidence_pull_id", "evidence_locator")
+
+
+def _synthetic_payloads(directory: Path) -> dict[str, bytes]:
+    """Rebuild each synthetic pull's raw payload, keyed by the CSVs' original pull id.
+
+    The generator never writes payloads to disk; it hashes `table|body...|observed_at` lines, one
+    per ledger row, ordered by (table, observed_at, body) within the pull. Reimplemented here
+    (not imported) from the table CSVs. Each row's locator must equal its rebuilt line number.
+    """
+    by_pull: dict[str, list[tuple[str, datetime, tuple[str, ...], str, str]]] = {}
+    for path in sorted(directory.glob("*.csv")):
+        with path.open(newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            header = next(reader, [])
+            if tuple(header[-3:]) != _TRAILING:
+                continue  # not a ledger table (e.g. evidence_pull.csv)
+            for r in reader:
+                body = tuple(r[:-3])
+                by_pull.setdefault(r[-2], []).append(
+                    (path.stem, datetime.fromisoformat(r[-3]), body, r[-3], r[-1])
+                )
+    out: dict[str, bytes] = {}
+    for pull_id, entries in by_pull.items():
+        entries.sort(key=lambda e: (e[0], e[1], e[2]))
+        lines: list[str] = []
+        for n, (table, _, body, observed, locator) in enumerate(entries, 1):
+            if locator != f"row={n}":
+                raise ValueError(f"pull {pull_id}: {table} row locator {locator!r} != row={n}")
+            lines.append("|".join((table, *body, observed)))
+        out[pull_id] = ("\n".join(lines) + "\n").encode()
+    return out
+
+
 def ingest_synthetic_dir(
     conn: Conn,
     store: EvidenceStore,
@@ -127,6 +162,7 @@ def ingest_synthetic_dir(
         # 2. synthetic pulls
         remap: dict[str, str] = {}
         skipped: set[str] = set()
+        payloads = _synthetic_payloads(directory)
         pull_rows: list[Values] = []
         with (directory / "evidence_pull.csv").open(newline="", encoding="utf-8") as f:
             for r in csv.DictReader(f):
@@ -136,9 +172,19 @@ def ingest_synthetic_dir(
                     skipped.add(orig)
                     result.pulls_skipped += 1
                     continue
+                payload = payloads.get(orig, b"")
+                if hashlib.sha256(payload).hexdigest() != r["sha256"] or len(payload) != int(
+                    r["byte_size"]
+                ):
+                    raise ValueError(
+                        f"synthetic pull {orig}: rebuilt payload does not match the recorded "
+                        "sha256; refusing to store unverifiable evidence"
+                    )
+                key = f"{prefix}/pulls/{remap[orig]}.txt"
+                store.put(key, payload)
                 pull_rows.append(
                     (remap[orig], tenant_id, borrower_id, r["source"],
-                     datetime.fromisoformat(r["fetched_at"]), r["s3_key"], r["sha256"],
+                     datetime.fromisoformat(r["fetched_at"]), key, r["sha256"],
                      int(r["byte_size"]), r["status"])
                 )  # fmt: skip
                 result.pulls_inserted += 1

@@ -1,0 +1,16 @@
+{
+  "payouts": [
+    {
+      "id": "po-1",
+      "amount": 410.5,
+      "total_fees": 13.2,
+      "currency_code": "USD",
+      "status": "paid",
+      "expected_arrival_date": "2026-03-06",
+      "paid_at": "2026-03-06T08:00:00Z",
+      "created_at": "2026-03-04T08:00:00Z",
+      "updated_at": "2026-03-06T08:00:00Z"
+    }
+  ],
+  "next_cursor": null
+}

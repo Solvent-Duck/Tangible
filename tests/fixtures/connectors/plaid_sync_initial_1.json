@@ -1,0 +1,48 @@
+{
+  "added": [
+    {
+      "transaction_id": "tx-1",
+      "account_id": "acct-1",
+      "amount": 25.5,
+      "iso_currency_code": "USD",
+      "date": "2026-03-02",
+      "authorized_date": "2026-03-02",
+      "name": "ACME SUPPLIES 4411",
+      "merchant_name": "Acme Supplies",
+      "pending": false,
+      "payment_channel": "other",
+      "category": null
+    },
+    {
+      "transaction_id": "tx-2",
+      "account_id": "acct-1",
+      "amount": -1200.0,
+      "iso_currency_code": "USD",
+      "date": "2026-03-03",
+      "authorized_date": "2026-03-03",
+      "name": "STRIPE TRANSFER",
+      "merchant_name": null,
+      "pending": false,
+      "payment_channel": "other",
+      "category": null
+    },
+    {
+      "transaction_id": "tx-pending",
+      "account_id": "acct-1",
+      "amount": 8.0,
+      "iso_currency_code": "USD",
+      "date": "2026-03-04",
+      "authorized_date": "2026-03-04",
+      "name": "COFFEE",
+      "merchant_name": null,
+      "pending": true,
+      "payment_channel": "other",
+      "category": null
+    }
+  ],
+  "modified": [],
+  "removed": [],
+  "next_cursor": "cur-1",
+  "has_more": true,
+  "request_id": "req-sync-1"
+}

@@ -1,0 +1,27 @@
+{
+  "added": [],
+  "modified": [
+    {
+      "transaction_id": "tx-1",
+      "account_id": "acct-1",
+      "amount": 27.5,
+      "iso_currency_code": "USD",
+      "date": "2026-03-02",
+      "authorized_date": "2026-03-02",
+      "name": "ACME SUPPLIES 4411",
+      "merchant_name": "Acme Supplies",
+      "pending": false,
+      "payment_channel": "other",
+      "category": null
+    }
+  ],
+  "removed": [
+    {
+      "transaction_id": "tx-2",
+      "account_id": "acct-1"
+    }
+  ],
+  "next_cursor": "cur-3",
+  "has_more": false,
+  "request_id": "req-sync-3"
+}

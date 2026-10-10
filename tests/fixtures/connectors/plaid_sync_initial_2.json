@@ -1,0 +1,22 @@
+{
+  "added": [
+    {
+      "transaction_id": "tx-3",
+      "account_id": "acct-1",
+      "amount": 300.0,
+      "iso_currency_code": "USD",
+      "date": "2026-03-05",
+      "authorized_date": "2026-03-05",
+      "name": "RENT MARCH",
+      "merchant_name": null,
+      "pending": false,
+      "payment_channel": "other",
+      "category": null
+    }
+  ],
+  "modified": [],
+  "removed": [],
+  "next_cursor": "cur-2",
+  "has_more": false,
+  "request_id": "req-sync-2"
+}

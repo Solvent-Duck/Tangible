@@ -1,0 +1,24 @@
+{
+  "orders": [
+    {
+      "id": "ord-2",
+      "order_number": "#ord-2",
+      "currency_code": "USD",
+      "subtotal": 50.0,
+      "total_discount": 0.0,
+      "total_tax": 0.0,
+      "total_amount": 50.0,
+      "created_at": "2026-03-02T12:30:00.000Z",
+      "updated_at": "2026-03-02T12:30:00.000Z",
+      "customer": {
+        "id": "cust-ord-2",
+        "email": null
+      },
+      "refunds": []
+    }
+  ],
+  "next_cursor": null,
+  "connection": {
+    "id": "conn-1"
+  }
+}
