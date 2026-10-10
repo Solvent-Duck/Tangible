@@ -39,9 +39,11 @@ from tangible.workbench.ui import queries
 HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"
 
-# htmx is loaded from a CDN, pinned to one version. TODO(production): vendor this file into
-# static/ and serve it from our own origin (add SRI or drop the CDN) before any production use.
-HTMX_URL = "https://unpkg.com/htmx.org@1.9.12"
+# htmx 1.9.12 is vendored (static/vendor/, with its 0BSD licence) and served from our own origin.
+# Source: the npm registry tarball htmx.org-1.9.12.tgz, verified against the registry's sha512
+# before copying. To upgrade: add the new file, update both constants, run test_htmx_vendor.
+HTMX_URL = "/static/vendor/htmx-1.9.12.min.js"
+HTMX_SRI = "sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
 
 COOKIE = "tangible_dev"
 FLASH = "tangible_flash"
@@ -49,6 +51,7 @@ SEVERITY_ORDER = ("hold", "review", "info")
 
 templates = Jinja2Templates(directory=HERE / "templates")  # autoescape is on for .html
 templates.env.globals["HTMX_URL"] = HTMX_URL
+templates.env.globals["HTMX_SRI"] = HTMX_SRI
 templates.env.filters["pretty"] = lambda v: json.dumps(v, indent=2, sort_keys=True, default=str)
 
 router = APIRouter()
