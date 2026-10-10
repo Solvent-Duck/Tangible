@@ -1,0 +1,29 @@
+<article class="finding sev-{{ f.severity }}" id="finding-{{ f.id }}">
+  <h4><span class="sev">{{ f.severity | upper }}</span> {{ f.summary }}</h4>
+  <p class="meta">
+    check {{ f.check_key }} v{{ f.check_version }} | pillar {{ f.pillar }} | {{ f.direction }} |
+    origin: <strong>{{ f.origin }}</strong>
+    {% if f.origin == 'model' %}
+      {% if f.verified %}| verified{% else %}| <strong class="unverified">UNVERIFIED model finding</strong>{% endif %}
+    {% endif %}
+    | review state: <strong>{{ f.review_state }}</strong>
+    | <a href="/cases/{{ c.id }}/findings/{{ f.id }}/trace">trace to source</a>
+  </p>
+  {% if f.actions %}
+  <details><summary>Review history ({{ f.actions | length }})</summary>
+    <ul>{% for a in f.actions %}<li>{{ a.at }} - {{ a.by }}: {{ a.action }} - {{ a.reason }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+  {% if error %}<p class="flash flash-error" role="alert">{{ error }}</p>{% endif %}
+  {% if is_analyst and c.status == 'review' %}
+  <form method="post" action="/cases/{{ c.id }}/findings/{{ f.id }}/review"
+        hx-post="/cases/{{ c.id }}/findings/{{ f.id }}/review" hx-target="#finding-{{ f.id }}" hx-swap="outerHTML">
+    <label for="reason-{{ f.id }}">Reason (required)</label>
+    <input id="reason-{{ f.id }}" name="reason" required size="40">
+    <button name="action" value="accept">Accept</button>
+    <button name="action" value="reject">Reject</button>
+    <button name="action" value="dispute">Dispute</button>
+    <button name="action" value="request_more">Request more</button>
+  </form>
+  {% endif %}
+</article>

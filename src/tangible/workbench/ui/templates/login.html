@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Dev sign-in{% endblock %}
+{% block body %}
+<h1>Dev sign-in</h1>
+<p>Development only. Pick a user in a tenant.</p>
+{% if error %}<p class="flash flash-error" role="alert">{{ error }}</p>{% endif %}
+<form method="get" action="/dev/login">
+  <label for="tenant">Tenant id</label>
+  <input id="tenant" name="tenant" value="{{ tenant }}" required size="40">
+  <button>List users</button>
+</form>
+{% if people is not none %}
+<h2>Users</h2>
+{% if not people %}<p>No users in this tenant.</p>{% endif %}
+<ul>
+{% for u in people %}
+  <li><form method="post" action="/dev/login" class="inline">
+    <input type="hidden" name="tenant" value="{{ tenant }}">
+    <input type="hidden" name="subject" value="{{ u.subject }}">
+    <button>Sign in as {{ u.subject }}</button> {{ u.name }} - {{ u.role }}
+  </form></li>
+{% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

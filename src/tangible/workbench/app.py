@@ -6,7 +6,7 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from tangible.workbench import services
+from tangible.workbench import services, ui
 from tangible.workbench.api import assessments, cases
 from tangible.workbench.auth import Authenticator, DevHeaderAuthenticator, OidcAuthenticator
 from tangible.workbench.settings import Settings
@@ -42,6 +42,7 @@ def create_app(
         app.add_exception_handler(exc_type, domain_error)
     app.include_router(cases.router)
     app.include_router(assessments.router)
+    ui.install(app)
     return app
 
 

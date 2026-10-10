@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Cases{% endblock %}
+{% block body %}
+<h1>Cases</h1>
+{% if p.role != 'analyst' %}<p>Lender roles see signed cases only.</p>{% endif %}
+{% if cases %}
+<table>
+<caption class="sr">Cases visible to you</caption>
+<thead><tr><th scope="col">Borrower</th><th scope="col">As of</th><th scope="col">Status</th><th scope="col">Analyst</th><th scope="col">Band</th></tr></thead>
+<tbody>
+{% for c in cases %}
+<tr>
+  <th scope="row"><a href="/cases/{{ c.id }}">{{ c.borrower }}</a></th>
+  <td>{{ c.as_of }}</td>
+  <td>{{ c.status }}</td>
+  <td>{{ c.assigned_analyst or 'unassigned' }}</td>
+  <td>{% set s = signed.get(c.id) %}{% if s %}<a href="/assessments/{{ s.id }}">{{ s.band or 'no band (knock-out)' }}</a>{% else %}-{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}<p>No cases.</p>{% endif %}
+{% endblock %}

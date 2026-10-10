@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Case{% endblock %}
+{% block body %}
+<h1>Case {{ c.id }}</h1>
+<p>As of {{ c.as_of }} | analyst {{ c.assigned_analyst or 'unassigned' }}{% if c.loan_amount %} | loan {{ c.loan_amount }}{% endif %}
+{% if c.previous_case_id %} | re-based from <a href="/cases/{{ c.previous_case_id }}">{{ c.previous_case_id }}</a>{% endif %}</p>
+{% include "_status.html" %}
+{% if c.assessments %}
+<p>Signed: <a href="/assessments/{{ c.assessments[0].id }}">assessment, band {{ c.assessments[0].decision_band or 'none (knock-out)' }}</a></p>
+{% endif %}
+
+{% if is_analyst %}
+<section aria-labelledby="plan-h">
+<h2 id="plan-h">Plan</h2>
+{% if plan %}
+  <p>Version {{ plan.version }}: <strong>{{ 'approved' if plan.approved else 'not approved' }}</strong></p>
+  {% if not plan.approved and c.status in ('open', 'planning') %}
+  <form method="post" action="/cases/{{ c.id }}/plan/approve">
+    <input type="hidden" name="plan_id" value="{{ plan.id }}">
+    <input type="hidden" name="original" value="{{ plan.body | pretty }}">
+    <label for="plan-body">Plan body (JSON; edit to change it)</label><br>
+    <textarea id="plan-body" name="body" rows="12" cols="80">{{ plan.body | pretty }}</textarea><br>
+    <button>Approve plan</button>
+  </form>
+  {% else %}
+  <pre>{{ plan.body | pretty }}</pre>
+  {% endif %}
+{% else %}<p>No plan yet.</p>{% endif %}
+{% if c.status in ('open', 'planning') %}
+  <form method="post" action="/cases/{{ c.id }}/plan" class="inline"><button>{{ 'Propose a new plan' if plan else 'Propose plan' }}</button></form>
+  {% if plan and plan.approved %}
+  <form method="post" action="/cases/{{ c.id }}/investigate" class="inline"><button>Start investigation</button></form>
+  {% endif %}
+{% endif %}
+</section>
+
+{% if c.status == 'review' %}
+<section aria-labelledby="sb-h">
+<h2 id="sb-h">Send back to the agent</h2>
+<form method="post" action="/cases/{{ c.id }}/send-back">
+  <label for="sb-q">Question or request</label>
+  <input id="sb-q" name="question" required size="60">
+  <button>Send back</button>
+</form>
+</section>
+{% endif %}
+{% if c.last_investigation %}<p>Last investigation stopped: {{ c.last_investigation.stop_reason }} ({{ c.last_investigation.at }}). Model calls: {{ c.usage.model_calls }}, cost ${{ c.usage.cost_usd }}.</p>{% endif %}
+{% endif %}
+
+<section aria-labelledby="m-h">
+<h2 id="m-h">Baseline metrics</h2>
+{% if metrics %}
+<table><caption class="sr">Baseline metrics</caption>
+<thead><tr><th scope="col">Metric</th><th scope="col">Version</th><th scope="col">Value</th></tr></thead>
+<tbody>{% for m in metrics %}<tr><th scope="row">{{ m.key }}</th><td>{{ m.version }}</td><td>{{ m.value if m.value is not none else 'not available' }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<p>No metrics yet. They appear after the investigation's baseline runs.</p>{% endif %}
+</section>
+
+<section aria-labelledby="f-h">
+<h2 id="f-h">Findings</h2>
+{% if not groups %}<p>No findings.</p>{% endif %}
+{% for sev, fs in groups %}
+<h3>{{ sev | capitalize }} severity ({{ fs | length }})</h3>
+{% for f in fs %}{% include "_finding.html" %}{% endfor %}
+{% endfor %}
+</section>
+
+{% if is_analyst %}
+<section aria-labelledby="q-h" id="questions">
+<h2 id="q-h">Borrower questions</h2>
+<p>Nothing is sent outside Tangible: approving a question records your approval only.</p>
+{% for q in c.questions %}
+<div class="q"><p>{{ q.body }}</p>
+{% if q.approved %}<p><strong>Approved</strong> (not sent)</p>
+{% else %}<form method="post" action="/cases/{{ c.id }}/questions/{{ q.id }}/approve"><button>Approve question</button></form>{% endif %}</div>
+{% else %}<p>No drafted questions.</p>{% endfor %}
+</section>
+
+<section aria-labelledby="d-h" id="documents">
+<h2 id="d-h">Documents</h2>
+{% if late %}
+<p class="flash flash-error" role="alert"><strong>Rebase required.</strong> {{ late }} uploaded document(s) arrived after this case's as_of and are invisible to it. Re-base to investigate with them.</p>
+<form method="post" action="/cases/{{ c.id }}/rebase"><button>Rebase case</button></form>
+{% endif %}
+{% if c.status != 'closed' %}
+<form method="post" action="/cases/{{ c.id }}/documents" enctype="multipart/form-data">
+  <label for="file">Upload a document</label>
+  <input id="file" type="file" name="file" required>
+  <button>Upload</button>
+</form>
+{% endif %}
+</section>
+
+<section aria-labelledby="s-h">
+<h2 id="s-h">Sign</h2>
+{% if c.status == 'review' %}
+<form method="get" action="/cases/{{ c.id }}/sign"><button>Sign report...</button></form>
+{% else %}
+<button disabled aria-describedby="s-why">Sign report</button>
+<p id="s-why">Signing needs status "review"; this case is "{{ c.status }}".</p>
+{% endif %}
+</section>
+{% endif %}
+{% endblock %}

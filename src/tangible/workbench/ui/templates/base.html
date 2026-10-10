@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Workbench{% endblock %} - Tangible</title>
+<link rel="stylesheet" href="/static/app.css">
+{# htmx only enhances; every form also works as a plain POST. Pinned CDN URL; vendor before production (see routes.py). #}
+<script src="{{ HTMX_URL }}" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header>
+  <a href="/" class="brand">Tangible workbench</a>
+  <nav aria-label="Main">
+    <a href="/">Cases</a>
+    {% if p and p.role == 'credit_admin' %}<a href="/cases/new">New case</a>{% endif %}
+  </nav>
+  {% if p %}
+  <span class="who">{{ p.subject }} ({{ p.role }})</span>
+  {% if has_cookie %}<form method="post" action="/dev/logout" class="inline"><button>Sign out</button></form>{% endif %}
+  {% endif %}
+</header>
+<main id="main">
+{% if flash %}<p class="flash flash-{{ flash.kind }}" role="status">{{ flash.message }}</p>{% endif %}
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>
