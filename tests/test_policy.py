@@ -10,7 +10,7 @@ POLICIES = Path(__file__).parent.parent / "policies"
 def test_default_policy_loads_with_stable_hash():
     a = load_policy(POLICIES / "default.yaml")
     b = load_policy(POLICIES / "default.yaml")
-    assert a.version == "0.2.0"
+    assert a.version == "0.2.1"
     assert a.sha256 == b.sha256 and len(a.sha256) == 64
     assert a.spec["knockout"]["open_finding_severity"] == "hold"
 

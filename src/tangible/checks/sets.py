@@ -22,6 +22,7 @@ CHECK_SETS: dict[str, tuple[tuple[str, int], ...]] = {
         ("unexplained_recurring_debit", 1),
     ),
 }
+CHECK_SETS["cs-2"] = (*CHECK_SETS["cs-1"], ("document_mismatch", 1), ("document_file_traits", 1))
 
 
 def check_set(set_id: str) -> tuple[tuple[str, int], ...]:

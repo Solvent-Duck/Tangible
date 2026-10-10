@@ -62,7 +62,7 @@ def balances(
 ) -> tuple[AccountBalance, ...]:
     ev = EvidenceRef("44444444-4444-4444-4444-444444444444", "bal")
     return (
-        AccountBalance("bal-open", ACCOUNT, Decimal(opening), date(2026, 1, 1), OBSERVED, ev),
+        AccountBalance("bal-open", ACCOUNT, Decimal(opening), date(2025, 12, 31), OBSERVED, ev),
         AccountBalance(
             "bal-close", ACCOUNT, closing if closing is not None else closing_balance(BANK_ROWS),
             date(2026, 1, 31), OBSERVED, ev,

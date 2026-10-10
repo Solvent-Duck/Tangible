@@ -1,9 +1,9 @@
 # Default policy. Each lender gets its own copy; the lender's credit team owns it.
 # Steps run in order: knockout -> bands -> review cap -> limit. Thresholds are starting guesses;
 # tune on the backtest. max/min are inclusive.
-version: "0.2.0"
+version: "0.2.1"
 metric_set: ms-2
-check_set: cs-1
+check_set: cs-2
 
 knockout:
   # A hold finding in these review states blocks a decision.

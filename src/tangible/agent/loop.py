@@ -5,6 +5,7 @@ trusted: its tool calls go through `call_tool` (validated, logged), and every to
 back wrapped as quoted, untrusted data. Budgets are enforced here, not by the model.
 """
 
+import html
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -190,7 +191,8 @@ def _approved_plan(conn: Conn, case: Case) -> dict[str, Any]:
 def wrap_tool_output(call_id: str, tool: str, payload: str) -> str:
     # "<" is escaped so tool output can never close the tag early; JSON stays valid.
     safe = payload.replace("<", "\\u003c")
-    return f'<tool_output call_id="{call_id}" tool="{tool}" untrusted="true">{safe}</tool_output>'
+    cid, name = html.escape(call_id, quote=True), html.escape(tool, quote=True)
+    return f'<tool_output call_id="{cid}" tool="{name}" untrusted="true">{safe}</tool_output>'
 
 
 def _baseline_summary(conn: Conn, case: Case, metric_ids: list[str]) -> str:
@@ -244,6 +246,11 @@ def investigate(
 ) -> InvestigationResult:
     plan = _approved_plan(conn, case)
     baseline = run_baseline(conn, case, policy)
+    if document_client is not None and not isinstance(document_client, LoggedClient):
+        # Document reads are model calls too: log them (and their cost) against the case.
+        document_client = LoggedClient(
+            document_client, conn, case, load_prompt("document_reader", 1), pricing
+        )
     ctx = open_context(
         conn, case, policy, workdir, verifier,
         document_client=document_client,

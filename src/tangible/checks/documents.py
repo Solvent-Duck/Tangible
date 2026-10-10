@@ -71,8 +71,8 @@ def document_mismatch(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     if none does and the feed has exactly one account, that account is used. Lines match
     one-to-one on direction, exact amount and date within +/-1 day. A statement line with no
     bank match, a bank row inside [period_start, period_end] absent from the statement, or an
-    opening/closing balance differing from the account_balance with as_of equal to
-    period_start/period_end by more than 1 GBP (skipped when no such balance row) is a hold.
+    opening/closing balance differing by more than 1 GBP from the end-of-day account_balance
+    on the day before period_start / on period_end (skipped when no such row) is a hold.
     If the account cannot be matched, or the feed has no rows for it in the period, the
     statement cannot be verified: info.
     """
@@ -158,7 +158,8 @@ def document_mismatch(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
         if missing_rows:
             problems.append(f"{len(missing_rows)} bank row(s) are missing from the statement")
         for label, stated, on in (
-            ("opening", st.opening_balance, st.period_start),
+            # Balances are end-of-day: the opening balance is the day before the period starts.
+            ("opening", st.opening_balance, st.period_start - timedelta(days=1)),
             ("closing", st.closing_balance, st.period_end),
         ):
             bal = _balance_on(k, account, on) if stated is not None else None
