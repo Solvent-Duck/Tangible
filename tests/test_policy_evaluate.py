@@ -34,7 +34,7 @@ def f(sev, state="open", fid="f1"):
 
 def test_default_parses():
     p = parse_policy(RAW)
-    assert p.version == "0.2.1" and p.metric_set == "ms-2" and p.check_set == "cs-2"
+    assert p.version == "0.2.2" and p.metric_set == "ms-2" and p.check_set == "cs-3"
     assert [b.band for b in p.bands] == ["A", "B", "C", "D"]
     assert p.limit.share["A"] == D("0.4")
 
@@ -178,7 +178,7 @@ def test_identical_inputs_identical_hash_and_metadata():
     a = evaluate(POLICY, m(), [f("review")])
     b = evaluate(POLICY, m(), [f("review")])
     assert a == b and a.result_sha256 == b.result_sha256 and len(a.result_sha256) == 64
-    assert a.policy_version == "0.2.1" and a.policy_sha256 == POLICY.sha256
+    assert a.policy_version == "0.2.2" and a.policy_sha256 == POLICY.sha256
     assert evaluate(POLICY, m(net_revenue=1), []).result_sha256 != a.result_sha256
 
 

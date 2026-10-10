@@ -7,7 +7,8 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Final
 
-from tangible.checks.registry import FindingDraft, check
+from tangible.checks.calendar_uk import is_business_day
+from tangible.checks.registry import FindingDraft, Severity, check
 from tangible.ledger.evidence import EvidenceRef
 from tangible.ledger.types import BankTxn, Ledger
 
@@ -280,3 +281,109 @@ def revoked_mid_review(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
             },
         )
     ]
+
+
+# ---------------------------------------------------------------- time_gaps v2
+
+GAP2_MIN_DAILY_ROWS: Final = Decimal(5)  # at this rate an empty day is < 1% likely by chance
+GAP2_PRIOR_MIN_DAYS: Final = 4  # same-weekday business days needed to judge a day
+GAP2_REVIEW_P: Final = Decimal("0.001")  # an episode this unlikely by chance is review
+GAP2_REVIEW_RUN: Final = 3  # or this many consecutive empty business days (outage)
+
+
+def _chance(expected: dict[date, Decimal], episode: list[date]) -> Decimal:
+    """Poisson chance of no rows on every day of the episode: exp(-sum of daily rates)."""
+    return (-sum((expected[d] for d in episode), Decimal(0))).exp()
+
+
+@check("time_gaps", 2)
+def time_gaps_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """Missing data, told apart from slow days and holidays.
+
+    Only business days in England and Wales count (weekends and bank holidays are never gaps).
+    An empty business day is "unexpected" when the same weekday had rows in every one of the
+    previous 8 weeks' business days, or averaged >= GAP2_MIN_DAILY_ROWS rows. Consecutive
+    unexpected empty business days form an episode. With r = the summed average daily rows over
+    an episode, exp(-r) is the chance of seeing no rows by luck (Poisson). An episode is review
+    when that chance is < GAP2_REVIEW_P or it lasts >= GAP2_REVIEW_RUN business days; anything
+    less is info. Silence after a source's last row is staleness (stale_connection), not a gap.
+    """
+    k = ledger.known(as_of)
+    last = as_of.date() - timedelta(days=1)
+    drafts: list[FindingDraft] = []
+    for table, rows in _dated_rows(k).items():
+        if not rows:
+            continue
+        counts: defaultdict[date, int] = defaultdict(int)
+        evidence_by_day: dict[date, EvidenceRef | None] = {}
+        for d, ev in rows:
+            counts[d] += 1
+            evidence_by_day.setdefault(d, ev)
+        active = sorted(evidence_by_day)
+        window = [last - timedelta(days=i) for i in range(GAP_WINDOW_DAYS - 1, -1, -1)]
+        days = [d for d in window if is_business_day(d) and d <= active[-1]]
+        position = {d: i for i, d in enumerate(days)}
+        expected: dict[date, Decimal] = {}
+        for d in days:
+            if counts.get(d):
+                continue
+            prior = [
+                p
+                for w in range(1, GAP_RATE_WEEKS + 1)
+                if is_business_day(p := d - timedelta(weeks=w))
+            ]
+            if len(prior) < GAP2_PRIOR_MIN_DAYS:
+                continue
+            rate = Decimal(sum(counts.get(p, 0) for p in prior)) / len(prior)
+            if rate >= GAP2_MIN_DAILY_ROWS or all(counts.get(p) for p in prior):
+                expected[d] = rate
+        if not expected:
+            continue
+        episodes: list[list[date]] = []
+        for d in sorted(expected):
+            if episodes and position[d] == position[episodes[-1][-1]] + 1:
+                episodes[-1].append(d)
+            else:
+                episodes.append([d])
+        chances = [_chance(expected, ep) for ep in episodes]
+        serious = [
+            c < GAP2_REVIEW_P or len(ep) >= GAP2_REVIEW_RUN
+            for c, ep in zip(chances, episodes, strict=True)
+        ]
+        w = min(
+            range(len(episodes)),
+            key=lambda i: (not serious[i], chances[i], -len(episodes[i]), episodes[i][0]),
+        )
+        worst, worst_chance = episodes[w], chances[w]
+        gaps = sorted(expected)
+        refs = _refs(
+            evidence_by_day[active[j - 1]] for g in gaps if (j := bisect_left(active, g)) > 0
+        )
+        severity: Severity = "review" if any(serious) else "info"
+        span = f"{worst[0]}" + (f" to {worst[-1]}" if len(worst) > 1 else "")
+        drafts.append(
+            FindingDraft(
+                check_key="time_gaps",
+                check_version=2,
+                severity=severity,
+                pillar="integrity",
+                summary=(
+                    f"{table} has no rows on {len(gaps)} business day(s) in the last "
+                    f"{GAP_WINDOW_DAYS} days where rows were expected. Worst: {span} "
+                    f"({len(worst)} day(s); chance of no rows by luck "
+                    f"{worst_chance:.4%})."
+                ),
+                evidence_refs=refs,
+                facts={
+                    "table": table,
+                    "gap_days": ",".join(d.isoformat() for d in gaps),
+                    "gap_count": str(len(gaps)),
+                    "episodes": str(len(episodes)),
+                    "worst_episode": ",".join(d.isoformat() for d in worst),
+                    "worst_chance": str(worst_chance.quantize(Decimal("0.000001"))),
+                    "review_p": str(GAP2_REVIEW_P),
+                    "review_run": str(GAP2_REVIEW_RUN),
+                },
+            )
+        )
+    return drafts

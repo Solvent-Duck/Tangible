@@ -23,6 +23,10 @@ CHECK_SETS: dict[str, tuple[tuple[str, int], ...]] = {
     ),
 }
 CHECK_SETS["cs-2"] = (*CHECK_SETS["cs-1"], ("document_mismatch", 1), ("document_file_traits", 1))
+# cs-3: time_gaps v2 (bank holidays, volume-aware, episode-based) replaces v1.
+CHECK_SETS["cs-3"] = tuple(
+    ("time_gaps", 2) if member == ("time_gaps", 1) else member for member in CHECK_SETS["cs-2"]
+)
 
 
 def check_set(set_id: str) -> tuple[tuple[str, int], ...]:

@@ -37,7 +37,7 @@ def as_of_for(ledger: Ledger) -> datetime:
 
 
 def all_findings(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
-    return [f for key, v in check_set("cs-2") for f in run_check(key, v, ledger, as_of)]
+    return [f for key, v in check_set("cs-3") for f in run_check(key, v, ledger, as_of)]
 
 
 def decide(ledger: Ledger, as_of: datetime, findings: list[FindingDraft]):  # noqa: ANN201
