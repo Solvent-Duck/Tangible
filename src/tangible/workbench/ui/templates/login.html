@@ -1,6 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Dev sign-in{% endblock %}
+{% block title %}{% if oidc %}Sign in{% else %}Dev sign-in{% endif %}{% endblock %}
 {% block body %}
+{% if oidc %}
+<h1>Sign in</h1>
+<form method="get" action="/auth/login">
+  {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+  <button>Sign in with your organisation</button>
+</form>
+{% else %}
 <h1>Dev sign-in</h1>
 <p>Development only. Pick a user in a tenant.</p>
 {% if error %}<p class="flash flash-error" role="alert">{{ error }}</p>{% endif %}
@@ -21,5 +28,6 @@
   </form></li>
 {% endfor %}
 </ul>
+{% endif %}
 {% endif %}
 {% endblock %}

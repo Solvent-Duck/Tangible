@@ -2,6 +2,7 @@
 
 import os
 
+import httpx
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -9,6 +10,7 @@ from fastapi.responses import JSONResponse
 from tangible.workbench import services, ui
 from tangible.workbench.api import assessments, cases
 from tangible.workbench.auth import Authenticator, DevHeaderAuthenticator, OidcAuthenticator
+from tangible.workbench.oidc import OidcRuntime, build_runtime, missing_settings
 from tangible.workbench.settings import Settings
 
 _STATUS: dict[type[Exception], int] = {
@@ -20,20 +22,25 @@ _STATUS: dict[type[Exception], int] = {
 
 
 def create_app(
-    settings: Settings | None = None, authenticator: Authenticator | None = None
+    settings: Settings | None = None,
+    authenticator: Authenticator | None = None,
+    *,
+    http_client: httpx.Client | None = None,
 ) -> FastAPI:
+    """Build the app. In oidc mode (the default) the OIDC settings are required and validated;
+    `http_client` is the injectable client for IdP requests (tests). An explicitly passed
+    `authenticator` replaces the API authenticator (tests only)."""
     settings = settings or Settings.from_env()
-    if authenticator is None:
-        if not settings.dev_auth:
-            # Dev header auth is not real authentication; OIDC is not built yet (see auth.py).
-            raise RuntimeError(
-                "refusing to start: the workbench only has dev header auth so far. "
-                "Set TANGIBLE_DEV_AUTH=1 on a development machine to use it."
-            )
-        authenticator = DevHeaderAuthenticator(settings.database_url)
+    runtime: OidcRuntime | None = None
+    if settings.auth_mode == "dev":
+        authenticator = authenticator or DevHeaderAuthenticator(settings.database_url)
+    elif authenticator is None or not missing_settings(settings):
+        runtime, built = build_runtime(settings, http_client)
+        authenticator = authenticator or built
     app = FastAPI(title="Tangible workbench")
     app.state.settings = settings
     app.state.authenticator = authenticator
+    app.state.oidc = runtime  # None in dev mode
 
     async def domain_error(_: Request, exc: Exception) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=_STATUS[type(exc)])
