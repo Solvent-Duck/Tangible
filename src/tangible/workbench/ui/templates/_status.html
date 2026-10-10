@@ -1,0 +1,3 @@
+<div id="inv-status" {% if c.status == 'investigating' %}hx-get="/cases/{{ c.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %} role="status">
+  Status: <strong>{{ c.status }}</strong>{% if c.status == 'investigating' %} - the agent is working; this updates automatically (reload to refresh without JavaScript).{% endif %}
+</div>

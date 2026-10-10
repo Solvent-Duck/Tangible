@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}New case{% endblock %}
+{% block body %}
+<h1>New case</h1>
+<form method="post" action="/cases/new">
+  <p><label for="borrower_id">Borrower</label>
+  <select id="borrower_id" name="borrower_id" required>
+    {% for b in borrowers %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+  </select></p>
+  <p><label for="as_of">As of (UTC)</label> <input id="as_of" name="as_of" type="datetime-local" value="{{ now }}" required></p>
+  <p><label for="loan_amount">Loan amount</label> <input id="loan_amount" name="loan_amount" inputmode="decimal"></p>
+  <p><label for="budget_steps">Agent step budget</label> <input id="budget_steps" name="budget_steps" value="40" inputmode="numeric"></p>
+  <p><label for="budget_usd">Agent cost budget (USD)</label> <input id="budget_usd" name="budget_usd" value="5.00" inputmode="decimal"></p>
+  <p><label for="assigned_analyst">Assign to analyst</label>
+  <select id="assigned_analyst" name="assigned_analyst">
+    <option value="">Unassigned</option>
+    {% for a in analysts %}<option value="{{ a.subject }}">{{ a.name }} ({{ a.subject }})</option>{% endfor %}
+  </select></p>
+  <button>Create case</button>
+</form>
+<h2>Assign an existing case</h2>
+<form method="post" action="/cases/assign">
+  <p><label for="case_id">Case id</label> <input id="case_id" name="case_id" size="40" required></p>
+  <p><label for="analyst">Analyst</label>
+  <select id="analyst" name="analyst">
+    {% for a in analysts %}<option value="{{ a.subject }}">{{ a.name }} ({{ a.subject }})</option>{% endfor %}
+  </select></p>
+  <button>Assign</button>
+</form>
+{% endblock %}

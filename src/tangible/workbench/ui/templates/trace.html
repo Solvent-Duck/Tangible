@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Trace{% endblock %}
+{% block body %}
+<h1>Finding trace</h1>
+<p><a href="/cases/{{ case_id }}">Back to case</a></p>
+{% set f = t.finding %}
+<h2><span class="sev">{{ f.severity | upper }}</span> {{ f.summary }}</h2>
+<p>check {{ f.check_key }} v{{ f.check_version }} | origin {{ f.origin }}{% if f.origin == 'model' %} | {{ 'verified' if f.verified else 'UNVERIFIED' }}{% endif %} | state {{ f.review_state }}</p>
+
+<h2>Tool calls ({{ t.tool_calls | length }})</h2>
+{% for tc in t.tool_calls %}
+<div class="call"><h3>{{ tc.tool }} v{{ tc.version }}</h3>
+<p>{{ tc.started_at }}{% if tc.duration_ms is not none %} | {{ tc.duration_ms }} ms{% endif %}{% if tc.error %} | <strong>error:</strong> {{ tc.error }}{% endif %}</p>
+<details><summary>Arguments</summary><pre>{{ tc.args | pretty }}</pre></details>
+<details><summary>Result</summary><pre>{{ tc.result | pretty }}</pre></details></div>
+{% else %}<p>No tool calls are attached to this finding (rule findings are computed directly from the ledger).</p>{% endfor %}
+
+<h2>Evidence ({{ t.evidence | length }})</h2>
+{% for e in t.evidence %}
+<div class="ev"><p><code>{{ e.ref }}</code></p>
+{% if e.error %}<p class="flash flash-error" role="alert">Could not resolve: {{ e.error }}</p>
+{% elif e.line is none %}<p>No raw line could be found for this reference.</p>
+{% else %}<pre class="raw">{{ e.line }}</pre>{% endif %}</div>
+{% else %}<p>No evidence references.</p>{% endfor %}
+{% endblock %}

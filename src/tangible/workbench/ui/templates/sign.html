@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Confirm signing{% endblock %}
+{% block body %}
+<h1>Confirm signing</h1>
+<p>Signing freezes the assessment. The policy, not you, sets the band and limit from the reviewed findings below. This cannot be undone.</p>
+<table><caption>Findings by severity and review state</caption>
+<thead><tr><th scope="col">Severity / state</th><th scope="col">Count</th></tr></thead>
+<tbody>{% for k, n in counts %}<tr><th scope="row">{{ k }}</th><td>{{ n }}</td></tr>{% else %}<tr><td colspan="2">No findings</td></tr>{% endfor %}</tbody></table>
+<form method="post" action="/cases/{{ c.id }}/sign">
+  <p><input id="confirm" type="checkbox" name="confirm" value="yes" required>
+  <label for="confirm">I have reviewed the findings and want to sign this report.</label></p>
+  <button>Sign and freeze</button> <a href="/cases/{{ c.id }}">Cancel</a>
+</form>
+{% endblock %}
