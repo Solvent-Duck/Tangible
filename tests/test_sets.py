@@ -57,7 +57,8 @@ def test_policies_pin_the_matching_check_sets():
     from tangible.policy import load_policy
 
     root = Path(__file__).parent.parent / "policies"
-    assert load_policy(root / "default.yaml").parsed.check_set == "cs-7"  # type: ignore[union-attr]
+    assert load_policy(root / "default.yaml").parsed.check_set == "cs-8"  # type: ignore[union-attr]
+    assert load_policy(root / "default-0.6.0.yaml").parsed.check_set == "cs-7"  # type: ignore[union-attr]
     assert load_policy(root / "default-0.5.0.yaml").parsed.check_set == "cs-6"  # type: ignore[union-attr]
     assert load_policy(root / "default-0.4.0.yaml").parsed.check_set == "cs-5"  # type: ignore[union-attr]
     assert load_policy(root / "default-0.3.0.yaml").parsed.check_set == "cs-4"  # type: ignore[union-attr]
@@ -76,3 +77,9 @@ def test_cs7_swaps_only_text_versions_of_cs6():
         "self_transfers_as_revenue": (1, 2), "unexplained_recurring_debit": (1, 2),
         "document_mismatch": (1, 2), "review_volume_vs_orders": (1, 2),
     }  # fmt: skip
+
+
+def test_cs8_raises_bought_reviews_as_a_hold_and_keeps_the_rest_of_cs7():
+    cs7, cs8 = check_set("cs-7"), check_set("cs-8")
+    changed = {k: (a, b) for (k, a), (_, b) in zip(cs7, cs8, strict=True) if a != b}
+    assert changed == {"review_volume_vs_orders": (2, 3)}

@@ -198,7 +198,7 @@ def test_060_writes_rules_in_dollars_and_050_frozen_rules_are_unchanged() -> Non
     # Same decision under both; only 0.6.0's wording differs (report block). Assessments frozen
     # under 0.5.0 must replay to byte-identical rules.
     m = _base() | {"stressed_runway": D(2)}
-    new = evaluate(POLICY, m, [])
+    new = evaluate(load_policy(POLICIES / "default-0.6.0.yaml"), m, [])
     old = evaluate(load_policy(POLICIES / "default-0.5.0.yaml"), m, [])
     assert (new.band, new.limit) == (old.band, old.limit) == ("A", D("20000.00"))
     rule = {r.policy_version: {x["step"]: x for x in r.rules_fired} for r in (new, old)}

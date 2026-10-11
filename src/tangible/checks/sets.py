@@ -68,6 +68,12 @@ _CS7_TEXT: dict[tuple[str, int], int] = {
 }
 CHECK_SETS["cs-7"] = tuple((k, _CS7_TEXT.get((k, v), v)) for k, v in CHECK_SETS["cs-6"])
 
+# cs-8: cs-7 with review_volume_vs_orders v3, which raises bought reviews as a hold, not a review.
+CHECK_SETS["cs-8"] = tuple(
+    ("review_volume_vs_orders", 3) if member == ("review_volume_vs_orders", 2) else member
+    for member in CHECK_SETS["cs-7"]
+)
+
 
 def check_set(set_id: str) -> tuple[tuple[str, int], ...]:
     members = CHECK_SETS[set_id]

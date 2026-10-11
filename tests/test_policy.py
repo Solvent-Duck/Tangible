@@ -12,7 +12,7 @@ POLICIES = Path(__file__).parent.parent / "policies"
 def test_default_policy_loads_with_stable_hash():
     a = load_policy(POLICIES / "default.yaml")
     b = load_policy(POLICIES / "default.yaml")
-    assert a.version == "0.6.0"
+    assert a.version == "0.7.0"
     assert a.sha256 == b.sha256 and len(a.sha256) == 64
     assert a.spec["knockout"]["open_finding_severity"] == "hold"
 
@@ -72,9 +72,25 @@ def test_released_050_file_is_kept_byte_for_byte():
     assert old.sha256 == "8fe7d8c7b3d61a4045b45b00de29605a7ca32a6358c791721b979d38c1020bf6"
 
 
+def test_released_060_file_is_kept_byte_for_byte():
+    # Assessments frozen under 0.6.0 carry this hash (default.yaml before 0.7.0).
+    old = load_policy(POLICIES / "default-0.6.0.yaml")
+    assert old.version == "0.6.0"
+    assert old.sha256 == "4ccc8c02f1e2cd04cfd8d067808d285db0907b1dcb83e55b9f2a117f72a85f85"
+
+
+def test_070_moves_to_cs8_and_keeps_every_rule_of_060():
+    old = load_policy(POLICIES / "default-0.6.0.yaml")
+    new = load_policy(POLICIES / "default.yaml")
+    assert old.parsed is not None and new.parsed is not None
+    assert (new.parsed.metric_set, new.parsed.check_set) == ("ms-4", "cs-8")
+    for f in ("bands", "limit", "knockout", "uplift", "review_findings", "stress", "report"):
+        assert getattr(new.parsed, f) == getattr(old.parsed, f), f
+
+
 def test_060_writes_dollars_on_cs7_and_keeps_every_rule_of_050():
     old = load_policy(POLICIES / "default-0.5.0.yaml")
-    new = load_policy(POLICIES / "default.yaml")
+    new = load_policy(POLICIES / "default-0.6.0.yaml")
     assert old.parsed is not None and new.parsed is not None
     assert (new.parsed.metric_set, new.parsed.check_set) == ("ms-4", "cs-7")
     for f in ("bands", "limit", "knockout", "uplift", "review_findings", "stress"):
