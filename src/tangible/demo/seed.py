@@ -8,6 +8,12 @@ around it (see tangible.datasets.synthetic) and ingested through the normal inge
 Time rule: a case's as_of is the end of the borrower's last data day, so every ledger row is
 visible to `known_as_of` and nothing is read from "the future".
 
+Each borrower has its own identity (bank account, processor, owner, lender, suppliers: a
+`Profile` in the generator) and `connection` rows: its processor and its bank, granted when its
+data starts and last pulled just before the case's as_of. Three stories ride on them: Oakden never
+connects Amazon (partial_coverage), Brightwell's processor feed has gone stale (stale_connection)
+and Oakden's bank connection was revoked days before the case's as_of (revoked_mid_review).
+
 Cases start `open` with no plan and need no model. With `run_agent=True` (a live model, about
 $1.50 a case) the staged cases are driven through the workbench services exactly as the UI
 drives them: propose plan, approve, run the investigation, and (for two of them) sign.
@@ -27,9 +33,10 @@ import tangible.checks  # noqa: F401  (registers checks)
 import tangible.metrics  # noqa: F401  (registers metrics)
 from tangible.agent.llm import ModelConfigError, client_from_env
 from tangible.backtest.synthetic_cohort import partition_lines
+from tangible.checks.completeness import REVOKED_LOOKBACK, STALE_AFTER
 from tangible.checks.registry import run_check
 from tangible.checks.sets import check_set
-from tangible.datasets.synthetic import PLANTS, generate
+from tangible.datasets.synthetic import DEFAULT_PROFILE, PLANTS, Profile, generate
 from tangible.db.repo import create_borrower, load_ledger
 from tangible.db.session import Conn, admin_connect, tenant_session
 from tangible.demo.shift import default_end_on, shift_lines
@@ -66,9 +73,42 @@ EXPECTED_CHECK: Final[dict[str, str]] = {
     "phantom_payouts": "orders_vs_payouts",
 }
 
+# Connection checks a connection story must trip (and otherwise must not): check -> severity.
+CONNECTION_CHECKS: Final[dict[str, str]] = {
+    "stale_connection": "review",
+    "revoked_mid_review": "hold",
+}
+BANK_SOURCE: Final = "plaid"  # the bank connection's `source`, as the Plaid connector writes it
+
 
 class SeedError(RuntimeError):
     """The demo data did not come out as designed. Raised rather than seeding a wrong demo."""
+
+
+@dataclass(frozen=True)
+class ConnectionSpec:
+    """One `connection` row, placed relative to the case's as_of (the end of the last data day).
+
+    `source` is the connected system: a processor name that partial_coverage can read (shopify,
+    stripe, ...) or the bank aggregator. granted_at is always the first data day."""
+
+    source: str
+    scopes: tuple[str, ...] = ()
+    last_success_ago: timedelta = timedelta(days=1)  # more than STALE_AFTER = stale
+    revoked_ago: timedelta | None = None  # revoked this long before as_of
+    last_error: str | None = None
+
+
+PROCESSOR_SCOPES: Final = ("orders", "payouts")
+BANK_SCOPES: Final = ("transactions", "balances")
+
+
+def healthy_connections(profile: Profile) -> tuple[ConnectionSpec, ...]:
+    """The processor and the bank, both pulled within the last day."""
+    return (
+        ConnectionSpec(profile.processor_source, PROCESSOR_SCOPES),
+        ConnectionSpec(BANK_SOURCE, BANK_SCOPES),
+    )
 
 
 @dataclass(frozen=True)
@@ -79,6 +119,51 @@ class BorrowerSpec:
     seed: int  # generator seed
     loan_amount: Decimal
     stage: str  # with --run-agent: "open", "review" (investigated) or "signed"
+    profile: Profile = DEFAULT_PROFILE  # who the borrower is in the data
+    connections: tuple[ConnectionSpec, ...] | None = None  # None: healthy processor and bank
+
+
+def connections_of(spec: BorrowerSpec) -> tuple[ConnectionSpec, ...]:
+    if spec.connections is not None:
+        return spec.connections
+    return healthy_connections(spec.profile)
+
+
+def connection_story(spec: BorrowerSpec) -> frozenset[str]:
+    """The connection checks this borrower's connections are designed to trip."""
+    out: set[str] = set()
+    for c in connections_of(spec):
+        if c.revoked_ago is not None:
+            if c.revoked_ago <= REVOKED_LOOKBACK:
+                out.add("revoked_mid_review")
+        elif c.last_success_ago > STALE_AFTER:
+            out.add("stale_connection")
+    return frozenset(out)
+
+
+def _suppliers(offset: int) -> tuple[str, ...]:
+    """Seven wholesale supplier names from a shared fictional pool; offsets give each borrower a
+    different mix (none is named like a demo borrower)."""
+    return tuple(SUPPLIER_POOL[(offset + i) % len(SUPPLIER_POOL)] for i in range(7))
+
+
+SUPPLIER_POOL: Final[tuple[str, ...]] = (
+    "AINSLEY GIFTWARE LTD",
+    "PENDLE PAPERWORKS LTD",
+    "COBBLESTONE IMPORTS LTD",
+    "TARN AND HOLM TRADING LTD",
+    "WILLOWBROOK WHOLESALE LTD",
+    "STONECHAT PACKAGING LTD",
+    "FERNLEY DISTRIBUTION LTD",
+    "GARNET HOUSE SUPPLIES LTD",
+    "ELMSTEAD CRAFT SUPPLY LTD",
+    "OSPREY HOMEWARES LTD",
+    "TEASEL LANE TRADING LTD",
+    "CARRICK WHOLESALE LTD",
+    "HOLLINS AND DAY LTD",
+    "MERSEYDALE IMPORTS LTD",
+    "BRACKEN POINT SUPPLIES LTD",
+)
 
 
 # Partitions and seeds were picked by running the baseline over every partition: the clean
@@ -87,27 +172,90 @@ class BorrowerSpec:
 # Stages with --run-agent: Harbour & Pine stays open for the live run; Marlow Lane is signed with a
 # band (review findings cap it at C); Kestrel is signed but knocked out by its rule hold; Brightwell
 # and Oakden wait in review for the analyst to review findings on stage.
+# Identities are fictional. Processors stay ones partial_coverage recognises (Shopify, Stripe,
+# Square) except Brightwell's SumUp; owners pay in and draw out through one personal account.
 SPECS: Final[tuple[BorrowerSpec, ...]] = (
-    BorrowerSpec("Harbour & Pine Homeware Ltd", 5, (), 101, Decimal("75000"), "open"),
-    BorrowerSpec("Kestrel Gift Co Ltd", 2, ("hidden_reserve",), 102, Decimal("120000"), "signed"),
     BorrowerSpec(
-        "Marlow Lane Interiors Ltd",
-        8,
-        ("undisclosed_lender_debit",),
-        103,
-        Decimal("40000"),
+        "Harbour & Pine Homeware Ltd", 5, (), 101, Decimal("75000"), "open",
+        profile=Profile(
+            account_ref="GB-HPH-001",
+            owner_account="SOPHIE ARMITAGE PERSONAL",
+            lender_name="ASHBURY FINANCE",
+            bank_name="SEVERNSIDE BANK PLC",
+            landlord="WHARF STREET PROPERTIES LTD",
+            supplier_names=_suppliers(0),
+        ),
+    ),
+    BorrowerSpec(
+        "Kestrel Gift Co Ltd", 2, ("hidden_reserve",), 102, Decimal("120000"), "signed",
+        profile=Profile(
+            account_ref="GB-KGC-001",
+            processor_name="STRIPE PAYMENTS UK",
+            processor_source="stripe",
+            owner_account="DANIEL OKONKWO PERSONAL",
+            lender_name="CRESTLINE FUNDING",
+            bank_name="CALDER AND WEIR BANK PLC",
+            landlord="MILLGATE ESTATES LTD",
+            supplier_names=_suppliers(3),
+        ),
+    ),
+    BorrowerSpec(
+        "Marlow Lane Interiors Ltd", 8, ("undisclosed_lender_debit",), 103, Decimal("40000"),
         "signed",
-    ),  # fmt: skip
+        profile=Profile(
+            account_ref="GB-MLI-001",
+            processor_name="SQUARE PAYMENTS",
+            processor_source="square",
+            owner_account="TOM HARGREAVES PERSONAL",
+            lender_name="FERNBANK FUNDING",  # web-lookup fixtures: Fernbank Funding Ltd
+            bank_name="TAMAR TRUST BANK PLC",
+            landlord="BRIDGE END PROPERTY LTD",
+            supplier_names=_suppliers(6),
+        ),
+    ),
     BorrowerSpec(
-        "Brightwell Crafts Ltd",
-        3,
-        ("self_transfer_revenue", "phantom_payouts"),
-        104,
-        Decimal("90000"),
-        "review",
-    ),  # fmt: skip
-    BorrowerSpec("Oakden Trading Ltd", 6, ("partial_coverage",), 105, Decimal("60000"), "review"),
-)
+        "Brightwell Crafts Ltd", 3, ("self_transfer_revenue", "phantom_payouts"), 104,
+        Decimal("90000"), "review",
+        profile=Profile(
+            account_ref="GB-BWC-001",
+            processor_name="SUMUP PAYMENTS LTD",
+            processor_source="sumup",
+            owner_account="J BRIGHTWELL PERSONAL",  # Josie Brightwell, per the web-lookup fixtures
+            lender_name="HALDEN ADVANCE",
+            bank_name="PENNINE TRUST BANK PLC",
+            landlord="OLD MILL LETTINGS LTD",
+            supplier_names=_suppliers(9),
+        ),
+        # The SumUp feed stopped three weeks before as_of: stale_connection (review).
+        connections=(
+            ConnectionSpec(
+                "sumup", PROCESSOR_SCOPES, last_success_ago=timedelta(days=19),
+                last_error="401 invalid_grant: refresh token expired",
+            ),
+            ConnectionSpec(BANK_SOURCE, BANK_SCOPES),
+        ),
+    ),
+    BorrowerSpec(
+        "Oakden Trading Ltd", 6, ("partial_coverage",), 105, Decimal("60000"), "review",
+        profile=Profile(
+            account_ref="GB-OKT-001",
+            owner_account="CALLUM WHITLOW PERSONAL",
+            lender_name="MERIDIAN ROW LENDING",
+            bank_name="FENLAND BANK PLC",
+            landlord="STATION YARD LTD",
+            supplier_names=_suppliers(12),
+        ),
+        # Shopify and the bank only: Amazon is never connected (partial_coverage), and the bank
+        # access was revoked three days before as_of (revoked_mid_review).
+        connections=(
+            ConnectionSpec("shopify", PROCESSOR_SCOPES),
+            ConnectionSpec(
+                BANK_SOURCE, BANK_SCOPES, last_success_ago=timedelta(days=4),
+                revoked_ago=timedelta(days=3),
+            ),
+        ),
+    ),
+)  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -122,6 +270,7 @@ class SeededBorrower:
     shift_days: int
     loan_amount: Decimal
     loud_checks: tuple[tuple[str, str], ...]  # (check_key, severity) above info at seed time
+    connections: tuple[str, ...] = ()  # one line per connection row, as seeded
 
 
 @dataclass(frozen=True)
@@ -158,6 +307,7 @@ class SeedSummary:
                 f"  case {b.case_id}  stage {b.stage}  loan GBP {b.loan_amount:,.0f}",
                 f"  plants: {plants}",
                 f"  data {b.first_day} to {b.last_day} (shifted {b.shift_days} days)",
+                "  connections: " + "; ".join(b.connections),
                 "  baseline: "
                 + (", ".join(f"{k}={s}" for k, s in b.loud_checks) or "no review/hold findings"),
             ]
@@ -199,8 +349,11 @@ def end_of_day(d: date) -> datetime:
 
 
 def verify_story(spec: BorrowerSpec, loud: list[tuple[str, str]]) -> None:
-    """A clean borrower must raise no review/hold finding; a planted one must trip its checks."""
-    if not spec.plants:
+    """The baseline must raise exactly the designed story. A clean borrower raises no review/hold
+    finding; a planted one trips its plant checks; a connection story trips its connection checks
+    at their severity, and the connection checks never fire without one."""
+    story = connection_story(spec)
+    if not spec.plants and not story:
         if loud:
             raise SeedError(f"{spec.name} was meant to be clean but the baseline raised {loud}")
         return
@@ -211,6 +364,14 @@ def verify_story(spec: BorrowerSpec, loud: list[tuple[str, str]]) -> None:
             f"{spec.name}: planted {missing} but the baseline did not raise "
             f"{[EXPECTED_CHECK[p] for p in missing]} (raised {loud})"
         )
+    for key, severity in CONNECTION_CHECKS.items():
+        if key in story and (key, severity) not in loud:
+            raise SeedError(
+                f"{spec.name}: its connections should raise {key} ({severity}) "
+                f"but the baseline raised {loud}"
+            )
+        if key not in story and key in fired:
+            raise SeedError(f"{spec.name}: {key} fired but its connections are meant to be fine")
 
 
 @dataclass(frozen=True)
@@ -231,7 +392,9 @@ def choose_end_on(
     """The latest end_on at or before `requested` (whole weeks back, at most MAX_BACKOFF_WEEKS)
     where every clean borrower really is clean. Returns it with the clean borrowers' prepared
     files. Checked on the generated files before anything is written to the database."""
-    clean = [sp for sp in specs if not sp.plants]
+    # Files carry no connections, so only borrowers with neither a plant nor a connection story
+    # can be judged here.
+    clean = [sp for sp in specs if not sp.plants and not connection_story(sp)]
     last_error: SeedError | None = None
     for weeks_back in range(MAX_BACKOFF_WEEKS + 1):
         end = requested - timedelta(days=7 * weeks_back)
@@ -270,6 +433,42 @@ def _create_users(conn: Conn, tenant_id: str) -> None:
             "VALUES (%s, %s, %s, %s, %s)",
             (tenant_id, subject, f"{subject}@demo.test", display, role),
         )
+
+
+def _stamp_connections(
+    conn: Conn, tenant_id: str, borrower_id: str, spec: BorrowerSpec, first: date, as_of: datetime
+) -> tuple[str, ...]:
+    """Insert the borrower's `connection` rows. granted_at is the first data day (and is what the
+    ledger treats as observed_at, so every row is known at as_of); pulls and revocations are
+    placed back from as_of. Returns one description per row."""
+    granted = datetime.combine(first, time(9), UTC)
+    described: list[str] = []
+    for c in connections_of(spec):
+        last_success = as_of - c.last_success_ago
+        revoked = as_of - c.revoked_ago if c.revoked_ago is not None else None
+        if not granted <= last_success <= (revoked or as_of) or (revoked and revoked > as_of):
+            raise SeedError(
+                f"{spec.name}: connection {c.source} does not fit the data "
+                f"({first} to {as_of.date()}): granted {granted}, last success {last_success}, "
+                f"revoked {revoked}"
+            )
+        conn.execute(
+            "INSERT INTO connection (tenant_id, borrower_id, source, granted_at, revoked_at, "
+            "scopes, last_success_at, last_error) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (tenant_id, borrower_id, c.source, granted, revoked, list(c.scopes), last_success,
+             c.last_error),
+        )  # fmt: skip
+        if revoked is not None:
+            described.append(
+                f"{c.source} revoked {c.revoked_ago and c.revoked_ago.days}d before as_of"
+            )
+        else:
+            ago = c.last_success_ago.days
+            described.append(
+                f"{c.source} last pulled {ago}d before as_of"
+                + (" (stale)" if ago > STALE_AFTER.days else "")
+            )
+    return tuple(described)
 
 
 def _case_status(url: str, tenant_id: str, case_id: str) -> str:
@@ -368,7 +567,7 @@ def seed_demo(
         shifted = run_dir / "shifted" / slug / "order_lines.csv"
         offset = shift_lines(parts[spec.partition], shifted, end_on=end)
         out = run_dir / "synthetic" / slug
-        generate(shifted, out, seed=spec.seed, plant=frozenset(spec.plants))
+        generate(shifted, out, seed=spec.seed, plant=frozenset(spec.plants), profile=spec.profile)
         return Prepared(spec, shifted, out, offset)
 
     effective, ready = choose_end_on(requested, specs, prepare, policy, log)
@@ -381,7 +580,9 @@ def seed_demo(
     evidence = LocalEvidenceStore(store)
     with tenant_session(url, tenant_id) as conn:
         _create_users(conn, tenant_id)
-    staged: list[tuple[BorrowerSpec, str, date, date, int, datetime, list[tuple[str, str]]]] = []
+    staged: list[
+        tuple[BorrowerSpec, str, date, date, int, datetime, list[tuple[str, str]], tuple[str, ...]]
+    ] = []
     for pr in prepared:
         spec = pr.spec
         with tenant_session(url, tenant_id) as conn:
@@ -389,19 +590,20 @@ def seed_demo(
             ingest_synthetic_dir(conn, evidence, tenant_id, borrower_id, pr.out, pr.shifted)
             first, last = data_span(load_ledger(conn, borrower_id))
             as_of = end_of_day(last)
+            described = _stamp_connections(conn, tenant_id, borrower_id, spec, first, as_of)
             loud = baseline_loud(conn, borrower_id, as_of, policy)
         try:
             verify_story(spec, loud)
         except SeedError as e:
             raise SeedError(f"{e} (tenant {tenant_id} was left partly seeded)") from None
-        staged.append((spec, borrower_id, first, last, pr.offset, as_of, loud))
+        staged.append((spec, borrower_id, first, last, pr.offset, as_of, loud, described))
         log(f"  ingested {spec.name}: baseline {loud or 'clean'}")
 
     # 3. cases, all assigned to the analyst, created by the credit admin like the UI does
     admin_p = lookup_principal(url, tenant_id, ADMIN)
     analyst_p = lookup_principal(url, tenant_id, ANALYST)
     seeded: list[SeededBorrower] = []
-    for spec, borrower_id, first, last, offset, as_of, loud in staged:
+    for spec, borrower_id, first, last, offset, as_of, loud, described in staged:
         with tenant_session(url, tenant_id) as conn:
             case = services.create_new_case(
                 conn, admin_p, borrower_id=borrower_id, as_of=as_of,
@@ -424,6 +626,7 @@ def seed_demo(
                 offset,
                 spec.loan_amount,
                 tuple(loud),
+                described,
             )  # fmt: skip
         )
     login = f"{base_url}/dev/login?tenant={tenant_id}"

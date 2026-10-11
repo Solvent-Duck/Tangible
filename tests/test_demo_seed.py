@@ -7,14 +7,19 @@ from typing import Any
 
 import pytest
 
+from tangible.datasets.synthetic import DEFAULT_PROFILE
+from tangible.db.repo import load_ledger
 from tangible.db.session import admin_connect, tenant_session
 from tangible.demo import seed as seed_mod
 from tangible.demo.cli import main as demo_main
 from tangible.demo.seed import (
     SPECS,
     BorrowerSpec,
+    ConnectionSpec,
     SeedError,
     baseline_loud,
+    connection_story,
+    connections_of,
     seed_demo,
     verify_story,
 )
@@ -39,11 +44,16 @@ def lines(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def run_seed(
-    url: str, lines: Path, tmp_path: Path, now: datetime, **kw: object
+    url: str,
+    lines: Path,
+    tmp_path: Path,
+    now: datetime,
+    specs: tuple[BorrowerSpec, ...] = TINY_SPECS,
+    **kw: object,
 ) -> seed_mod.SeedSummary:
     return seed_demo(
         end_on=END_ON, store=tmp_path / "evidence", work=tmp_path / "work", lines=lines,
-        database_url=url, specs=TINY_SPECS, n_partitions=2, now=now, log=lambda _: None,
+        database_url=url, specs=specs, n_partitions=2, now=now, log=lambda _: None,
         **kw,  # type: ignore[arg-type]
     )  # fmt: skip
 
@@ -218,3 +228,140 @@ def test_run_agent_needs_a_configured_live_model(
     with pytest.raises(SystemExit) as e:
         demo_main(["seed", "--run-agent", "--lines", str(lines), "--work", str(tmp_path)])
     assert e.value.code == 1
+
+
+# ---------------------------------------------------------------- identities and connections
+
+
+def connection_rows(url: str, tenant: str, borrower_id: str) -> dict[str, tuple[Any, ...]]:
+    with tenant_session(url, tenant) as conn:
+        rows = conn.execute(
+            "SELECT source, granted_at, revoked_at, last_success_at, scopes, last_error "
+            "FROM connection WHERE borrower_id = %s",
+            (borrower_id,),
+        ).fetchall()
+    return {r[0]: tuple(r) for r in rows}
+
+
+def test_each_borrower_gets_connections_to_its_processor_and_bank(
+    test_db_url: str, lines: Path, tmp_path: Path
+) -> None:
+    s = run_seed(test_db_url, lines, tmp_path, datetime(2026, 10, 10, 19, 0))
+    for b, spec in zip(s.borrowers, TINY_SPECS, strict=True):
+        rows = connection_rows(test_db_url, s.tenant_id, b.borrower_id)
+        assert set(rows) == {spec.profile.processor_source, "plaid"}
+        as_of = datetime.combine(b.last_day, time(23, 59, 59), UTC)
+        for _, granted, revoked, last_success, scopes, err in rows.values():
+            assert granted == datetime.combine(b.first_day, time(9), UTC)  # the start of its data
+            assert revoked is None and err is None and scopes
+            assert timedelta(0) <= as_of - last_success <= timedelta(days=2)
+        assert len(b.connections) == 2
+    assert "connections: " in s.render()
+
+
+def test_stale_and_revoked_connections_fire_as_review_and_hold(
+    test_db_url: str, lines: Path, tmp_path: Path
+) -> None:
+    story = BorrowerSpec(
+        "Brightwell Crafts Ltd", 1, ("hidden_reserve",), 102, Decimal("90000"), "review",
+        connections=(
+            ConnectionSpec("shopify", last_success_ago=timedelta(days=19),
+                           last_error="401 invalid_grant"),
+            ConnectionSpec("plaid", last_success_ago=timedelta(days=4),
+                           revoked_ago=timedelta(days=3)),
+        ),
+    )  # fmt: skip
+    assert connection_story(story) == {"stale_connection", "revoked_mid_review"}
+    now = datetime(2026, 10, 10, 19, 1)
+    s = run_seed(test_db_url, lines, tmp_path, now, (TINY_SPECS[0], story))
+    clean, planted = s.borrowers
+    assert clean.loud_checks == ()  # healthy connections leave the clean one clean
+    loud = dict(planted.loud_checks)
+    assert loud["stale_connection"] == "review" and loud["revoked_mid_review"] == "hold"
+    assert loud["payouts_vs_deposits"] == "hold"
+
+    rows = connection_rows(test_db_url, s.tenant_id, planted.borrower_id)
+    as_of = datetime.combine(planted.last_day, time(23, 59, 59), UTC)
+    assert rows["shopify"][3] == as_of - timedelta(days=19) and rows["shopify"][2] is None
+    assert rows["shopify"][5] == "401 invalid_grant"
+    assert rows["plaid"][2] == as_of - timedelta(days=3)
+    assert rows["plaid"][3] <= rows["plaid"][2]  # no successful pull after the revocation
+    # Time rule: nothing here is known before its grant.
+    with tenant_session(test_db_url, s.tenant_id) as conn:
+        ledger = load_ledger(conn, planted.borrower_id)
+    assert len(ledger.known(as_of).connections) == 2
+    before = datetime.combine(planted.first_day, time(8), UTC)
+    assert ledger.known(before).connections == ()
+
+
+def test_a_connection_that_does_not_fit_the_data_fails_before_a_wrong_demo(
+    test_db_url: str, lines: Path, tmp_path: Path
+) -> None:
+    bad = BorrowerSpec(
+        "Too Old Ltd", 0, (), 101, Decimal(1), "open",
+        connections=(ConnectionSpec("shopify", last_success_ago=timedelta(days=900)),),
+    )  # fmt: skip
+    with pytest.raises(SeedError, match="does not fit the data"):
+        run_seed(test_db_url, lines, tmp_path, datetime(2026, 10, 10, 19, 2), (bad,))
+
+
+def test_verify_story_checks_the_connection_story() -> None:
+    stale = BorrowerSpec(
+        "A Ltd", 0, (), 1, Decimal(1), "open",
+        connections=(ConnectionSpec("shopify", last_success_ago=timedelta(days=19)),),
+    )  # fmt: skip
+    verify_story(stale, [("stale_connection", "review")])
+    with pytest.raises(SeedError, match="stale_connection"):
+        verify_story(stale, [])
+    with pytest.raises(SeedError, match="stale_connection"):
+        verify_story(stale, [("stale_connection", "hold")])  # wrong severity
+    revoked = BorrowerSpec(
+        "B Ltd", 0, (), 1, Decimal(1), "open",
+        connections=(ConnectionSpec("plaid", revoked_ago=timedelta(days=3)),),
+    )  # fmt: skip
+    verify_story(revoked, [("revoked_mid_review", "hold")])
+    with pytest.raises(SeedError, match="revoked_mid_review"):
+        verify_story(revoked, [])
+    # A connection check firing without a designed story is a wrong demo, planted or not.
+    healthy = BorrowerSpec("C Ltd", 0, ("hidden_reserve",), 1, Decimal(1), "open")
+    with pytest.raises(SeedError, match="stale_connection fired"):
+        verify_story(healthy, [("payouts_vs_deposits", "hold"), ("stale_connection", "review")])
+    # Revoked longer ago than the look-back is not a story the check can see.
+    old = BorrowerSpec(
+        "D Ltd", 0, (), 1, Decimal(1), "open",
+        connections=(ConnectionSpec("plaid", revoked_ago=timedelta(days=60)),),
+    )  # fmt: skip
+    assert connection_story(old) == frozenset()
+
+
+def test_default_specs_have_distinct_identities_and_the_designed_connections() -> None:
+    profiles = [s.profile for s in SPECS]
+    assert DEFAULT_PROFILE not in profiles
+    for field in ("account_ref", "owner_account", "lender_name", "bank_name", "landlord"):
+        assert len({getattr(p, field) for p in profiles}) == len(SPECS), field
+    assert len({p.supplier_names for p in profiles}) == len(SPECS)
+    assert all(p.account_ref.startswith("GB-") and p.account_ref.endswith("-001") for p in profiles)
+    assert {p.processor_source for p in profiles} >= {"shopify", "stripe", "square", "sumup"}
+    # No demo borrower's supplier is named like another demo borrower.
+    words = {s.name.upper().split()[0] for s in SPECS}
+    assert not words & {w for p in profiles for n in p.supplier_names for w in n.split()}
+    by_name = {s.name: s for s in SPECS}
+    story = {name: connection_story(s) for name, s in by_name.items()}
+    assert story == {
+        "Harbour & Pine Homeware Ltd": frozenset(),
+        "Kestrel Gift Co Ltd": frozenset(),
+        "Marlow Lane Interiors Ltd": frozenset(),
+        "Brightwell Crafts Ltd": {"stale_connection"},
+        "Oakden Trading Ltd": {"revoked_mid_review"},
+    }
+    for s in SPECS:
+        sources = {c.source for c in connections_of(s)}
+        assert s.profile.processor_source in sources and "plaid" in sources
+        assert "amazon" not in sources  # Oakden's partial_coverage story; nobody else sells there
+    # Connection stories sit on borrowers staged for review.
+    assert all(by_name[n].stage == "review" for n, st in story.items() if st)
+    # A different (fictional) lender for the undisclosed-debit story.
+    assert by_name["Marlow Lane Interiors Ltd"].profile.lender_name != "YRDEAL CAPITAL"
+    # Names the web-lookup fixtures rely on (CCJ and charge from the lender; the director).
+    assert by_name["Marlow Lane Interiors Ltd"].profile.lender_name == "FERNBANK FUNDING"
+    assert by_name["Brightwell Crafts Ltd"].profile.owner_account == "J BRIGHTWELL PERSONAL"
