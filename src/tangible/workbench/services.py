@@ -23,17 +23,20 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from tangible.agent.llm import ModelClient
+from tangible.agent.llm import LoggedClient, ModelClient
 from tangible.agent.loop import approve_plan as _approve_plan
 from tangible.agent.loop import investigate as _investigate
 from tangible.agent.loop import propose_plan as _propose_plan
 from tangible.agent.loop import send_back as _send_back
+from tangible.agent.prompts import load_prompt
 from tangible.agent.verify import verify_numbers
 from tangible.assessment import freeze, record_override, replay
 from tangible.assessment.freeze import review_states
 from tangible.db.cases import Case, create_case, get_case, set_case_status
 from tangible.db.session import Conn, tenant_session
-from tangible.documents.upload import store_upload
+from tangible.documents.pending import ReadOutcome, pending_pulls, read_pending, source_ref_for
+from tangible.documents.upload import SOURCE as UPLOAD_SOURCE
+from tangible.documents.upload import display_name, store_upload
 from tangible.evidence import resolve as evidence_resolve
 from tangible.evidence.store import LocalEvidenceStore
 from tangible.ledger.evidence import EvidenceRef
@@ -766,6 +769,8 @@ def approve_question(conn: Conn, p: Principal, case_id: str, question_id: str) -
 def upload_document(
     conn: Conn, settings: Settings, p: Principal, case_id: str, filename: str, data: bytes
 ) -> dict[str, Any]:
+    """Store an uploaded file as write-once evidence. It is observed now (`fetched_at`), so a case
+    dated before that cannot see it until the case is re-based; this never relaxes the time rule."""
     case = _driven_case(conn, p, case_id)
     if case.status == "closed":
         raise Conflict("the case is closed; upload to its successor case")
@@ -781,19 +786,108 @@ def upload_document(
         conn, p, "upload", "evidence_pull", pull_id,
         {"case_id": case.id, "filename": filename, "bytes": len(data)},
     )  # fmt: skip
-    # Evidence stored now is observed now; this case's as_of has passed, so it cannot see it.
-    rebase_required = datetime.now(UTC) > case.as_of
+    row = conn.execute(
+        "SELECT sha256, fetched_at FROM evidence_pull WHERE id = %s", (pull_id,)
+    ).fetchone()
+    assert row
+    sha256, observed_at = str(row[0]), row[1]
+    # A byte-identical re-upload returns the original pull (and its original observed time), so
+    # whether this case can see the file depends on when the file first arrived, not on now.
+    rebase_required = observed_at > case.as_of
     return {
         "pull_id": pull_id,
         "byte_size": len(data),
+        "sha256": sha256,
+        "observed_at": observed_at.isoformat(),
         "rebase_required": rebase_required,
         "note": (
-            "The case's as_of is earlier than this upload, so the case cannot use it. "
-            "Re-base the case to investigate with it."
+            "This document arrived after the case date. Rebase the case to include it."
             if rebase_required
-            else "Stored."
+            else "Stored. It arrived before this case's date, so the case already includes it."
         ),
     }
+
+
+def upload_and_rebase(
+    conn: Conn, settings: Settings, p: Principal, case_id: str, filename: str, data: bytes
+) -> dict[str, Any]:
+    """Upload, then re-base in the same transaction (one action for the live demo).
+
+    Only for a case with no review work to lose ('open' or 'planning'): re-basing closes the case,
+    and a case under review carries findings the analyst has already judged. Those cases upload
+    first and re-base as a separate, deliberate step. Same time rule as the two-step flow: the
+    file is observed at upload, the new case is dated after it, the old case never sees it.
+    """
+    case = _driven_case(conn, p, case_id)
+    _require_status(case, "open", "planning")
+    up = upload_document(conn, settings, p, case_id, filename, data)
+    new = rebase_case(conn, p, case_id, settings)
+    return {**new, "upload": up}
+
+
+def case_documents(conn: Conn, p: Principal, case_id: str) -> list[dict[str, Any]]:
+    """The borrower's uploaded documents as this case sees them: file name, SHA-256, when each
+    was observed (stored), whether it was observed by the case's as_of, and whether it was read."""
+    case = _driven_case(conn, p, case_id)
+    rows = conn.execute(
+        "SELECT p.id, p.s3_key, p.sha256, p.byte_size, p.fetched_at, "
+        "(SELECT max(d.observed_at) FROM document_extract d WHERE d.evidence_pull_id = p.id), "
+        "(SELECT a.detail->>'error' FROM audit_log a WHERE a.object_id = p.id "
+        " AND a.action = 'document_read_failed' ORDER BY a.at DESC, a.id DESC LIMIT 1) "
+        "FROM evidence_pull p WHERE p.borrower_id = %s AND p.source = %s AND p.status = 'complete' "
+        "ORDER BY p.fetched_at DESC, p.id",
+        (case.borrower_id, UPLOAD_SOURCE),
+    ).fetchall()
+    return [
+        {
+            "pull_id": str(r[0]),
+            "filename": display_name(str(r[1])),
+            "sha256": str(r[2]),
+            "byte_size": r[3],
+            "observed_at": r[4].isoformat(),
+            "included": r[4] <= case.as_of,
+            "read": r[5] is not None,
+            "read_error": r[6] if r[5] is None else None,
+        }
+        for r in rows
+    ]
+
+
+def _read_uploads(
+    conn: Conn, settings: Settings, p: Principal, case: Case
+) -> tuple[list[ReadOutcome], dict[str, str]]:
+    """Read the borrower's unread uploads for a freshly re-based case (tool-less reader, logged
+    against the case). Each extract is observed at its upload time, which is before the new
+    case's as_of, so the case's baseline checks see it. Failures are recorded, not raised."""
+    pending = pending_pulls(conn, case.borrower_id)
+    if not pending:
+        return [], {}
+    try:
+        client: ModelClient = LoggedClient(
+            settings.client_factory(),
+            conn,
+            case,
+            load_prompt("document_reader", 1),
+            settings.pricing,
+        )
+        outcomes = read_pending(
+            conn,
+            LocalEvidenceStore(settings.evidence_dir),
+            client,
+            case.tenant_id,
+            case.borrower_id,
+        )
+    except Exception as e:  # the model could not be set up: every unread file stays unread
+        why = f"{type(e).__name__}: {e}"[:200]
+        outcomes = [ReadOutcome(pid, False, why) for pid, _, _ in pending]
+    names = {pid: display_name(key) for pid, key, _ in pending}
+    for o in outcomes:
+        audit.record(
+            conn, p, "document_read" if o.ok else "document_read_failed", "evidence_pull",
+            o.pull_id,
+            {"case_id": case.id, "source_ref": source_ref_for(o.pull_id), "error": o.error},
+        )  # fmt: skip
+    return outcomes, names
 
 
 # ---------------------------------------------------------------- sign, rebase
@@ -834,9 +928,16 @@ def sign_case(conn: Conn, settings: Settings, p: Principal, case_id: str) -> dic
     )
 
 
-def rebase_case(conn: Conn, p: Principal, case_id: str) -> dict[str, Any]:
-    """New case for the same borrower with as_of = now; the old case is closed. The time rule is
-    never relaxed: late evidence is only visible to a case whose as_of is after it arrived."""
+def rebase_case(
+    conn: Conn, p: Principal, case_id: str, settings: Settings | None = None
+) -> dict[str, Any]:
+    """New case for the same borrower with as_of = now; the old case is closed (nothing is
+    deleted: its findings, reviews and any assessment stay). The time rule is never relaxed: late
+    evidence is only visible to a case whose as_of is after it arrived.
+
+    With `settings`, uploaded documents nobody has read yet are read now for the new case (a
+    tool-less reader, logged against it) so its baseline checks compare them with the ledger. A
+    file that cannot be read is reported in `documents_unread` and does not stop the rebase."""
     old = _driven_case(conn, p, case_id)
     if old.status in ("closed", "investigating"):
         raise Conflict(f"a '{old.status}' case cannot be re-based")
@@ -850,6 +951,16 @@ def rebase_case(conn: Conn, p: Principal, case_id: str) -> dict[str, Any]:
     audit.record(conn, p, "rebase", "case", new.id, {"previous_case_id": old.id})
     out = _case_row(_load_case(conn, new.id))
     out["previous_case_id"] = old.id
+    outcomes: list[ReadOutcome] = []
+    names: dict[str, str] = {}
+    if settings is not None:
+        outcomes, names = _read_uploads(conn, settings, p, new)
+    out["documents_read"] = sum(1 for o in outcomes if o.ok)
+    out["documents_unread"] = [
+        {"pull_id": o.pull_id, "filename": names.get(o.pull_id, ""), "error": o.error}
+        for o in outcomes
+        if not o.ok
+    ]
     return out
 
 

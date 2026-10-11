@@ -362,6 +362,7 @@ def test_upload_then_rebase(stack: Stack) -> None:
     r = stack.call("POST", f"/api/cases/{old}/documents", "ana", 201, files=files)
     out = r.json()
     assert out["rebase_required"] is True and out["byte_size"] > 0
+    assert len(out["sha256"]) == 64 and datetime.fromisoformat(out["observed_at"]) > stack.w.as_of
     assert LocalEvidenceStore(stack.store).exists(
         _key(stack.w, out["pull_id"])
     )  # stored write-once
@@ -371,6 +372,9 @@ def test_upload_then_rebase(stack: Stack) -> None:
     new = stack.call("POST", f"/api/cases/{old}/rebase", "ana", 201).json()
     assert new["id"] != old and new["previous_case_id"] == old and new["status"] == "open"
     assert new["assigned_analyst"] == "ana" and new["loan_amount"] == "50000.00"
+    assert new["documents_read"] == 0 and [u["pull_id"] for u in new["documents_unread"]] == [
+        out["pull_id"]
+    ]  # a CSV is not a readable statement: reported, and the rebase still happened
     assert datetime.fromisoformat(new["as_of"]) > stack.w.as_of
     assert datetime.fromisoformat(new["as_of"]) <= datetime.now(UTC)
     assert stack.case(old)["status"] == "closed"
@@ -382,6 +386,10 @@ def test_upload_then_rebase(stack: Stack) -> None:
     assert row == (uuid.UUID(old),)
     stack.call("POST", f"/api/cases/{old}/rebase", "ana", 409)
     stack.call("POST", f"/api/cases/{old}/documents", "ana", 409, files=files)
+    # the same bytes again: the original observation stands, and it is before the new case's date
+    again = stack.call("POST", f"/api/cases/{new['id']}/documents", "ana", 201, files=files).json()
+    assert again["pull_id"] == out["pull_id"] and again["observed_at"] == out["observed_at"]
+    assert again["rebase_required"] is False
     stack.drive(new["id"])  # the successor can be worked normally
 
 
