@@ -9,13 +9,26 @@
 </form>
 {% else %}
 <h1>Dev sign-in</h1>
-<p>Development only. Pick a user in a tenant.</p>
+<p>Development only. Pick a tenant, then a user in it.</p>
 {% if error %}<p class="flash flash-error" role="alert">{{ error }}</p>{% endif %}
 <form method="get" action="/dev/login">
   <label for="tenant">Tenant id</label>
   <input id="tenant" name="tenant" value="{{ tenant }}" required size="40">
   <button>List users</button>
 </form>
+{% if tenants is not none %}
+<h2>Tenants</h2>
+{% if not tenants %}<p>No tenants yet. Run <code>make demo</code> to create one.</p>{% else %}
+<table>
+  <thead><tr><th scope="col">Tenant</th><th scope="col">Created</th><th scope="col">Cases</th></tr></thead>
+  <tbody>
+  {% for t in tenants %}
+  <tr><td><a href="/dev/login?tenant={{ t.id }}">{{ t.name }}</a><br><small class="sha">{{ t.id }}</small></td><td>{{ t.created_at }}</td><td>{{ t.cases }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
 {% if people is not none %}
 <h2>Users</h2>
 {% if not people %}<p>No users in this tenant.</p>{% endif %}

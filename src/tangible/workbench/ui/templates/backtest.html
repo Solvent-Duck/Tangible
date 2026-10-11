@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Backtest{% endblock %}
+{% block body %}
+<h1>Backtest</h1>
+{% if not s %}
+<p class="flash" role="note">
+  {% if problem == 'missing' %}No backtest report has been generated yet.{% else %}The backtest report could not be shown: {{ problem }}.{% endif %}
+</p>
+<p>Generate a synthetic one (needs <code>data/processed/uci_lines.csv</code> and <code>make db-up</code>), then reload this page:</p>
+<pre>{{ hint }}</pre>
+<p class="meta">Looking for the report at <code>{{ path }}</code>. Set <code>TANGIBLE_BACKTEST_REPORT</code> to read a different file.</p>
+{% else %}
+{% if s.synthetic %}
+<p class="flash flash-error" role="note" style="font-size:1.4rem;font-weight:700;text-align:center;padding:1rem">SYNTHETIC COHORT: labels are planted problems, not repayment outcomes</p>
+{% endif %}
+<p class="meta">Report <code>{{ path }}</code> | policy v{{ s.policy_version }}{% if s.policy_sha %} | policy hash <span class="sha">{{ s.policy_sha[:12] }}</span>{% endif %}{% if s.agent_status %} | agent: {{ s.agent_status }}{% endif %}</p>
+
+<h2>Cohort summary</h2>
+<table><tbody>
+  <tr><th scope="row">Loans</th><td>{{ s.cohort.loans }}</td></tr>
+  <tr><th scope="row">With a planted problem</th><td>{{ s.cohort.planted_loans }}</td></tr>
+  <tr><th scope="row">Labelled defaulted</th><td>{{ s.cohort.defaulted }}</td></tr>
+  <tr><th scope="row">Labelled repaid</th><td>{{ s.cohort.repaid }}</td></tr>
+  <tr><th scope="row">Label rate</th><td>{{ s.cohort.default_rate }}</td></tr>
+  <tr><th scope="row">Loans that received a band</th><td>{{ s.cohort.with_band }}</td></tr>
+  <tr><th scope="row">Total loan amount</th><td>{{ s.cohort.total_loan_amount }}</td></tr>
+  <tr><th scope="row">Total loss amount</th><td>{{ s.cohort.total_loss_amount }}</td></tr>
+</tbody></table>
+
+<h2>Loss by band</h2>
+<table>
+  <thead><tr><th scope="col">Band</th><th scope="col">Loans</th><th scope="col">Labelled defaulted</th><th scope="col">Rate</th><th scope="col">Loan amount</th><th scope="col">Loss amount</th></tr></thead>
+  <tbody>
+  {% for b in s.loss_by_band %}
+  <tr><th scope="row">{{ b.band }}</th><td>{{ b.count }}</td><td>{{ b.defaults }}</td><td>{{ b.default_rate }}</td><td>{{ b.loan_amount }}</td><td>{{ b.loss_amount }}</td></tr>
+  {% else %}<tr><td colspan="6">No bands in the report.</td></tr>{% endfor %}
+  </tbody>
+</table>
+
+<h2>Plants caught</h2>
+<p><strong>{{ s.plants.catch_rate }}</strong> caught ({{ s.plants.caught }} of {{ s.plants.planted }} planted problems).</p>
+{% if s.plants.rows %}
+<table>
+  <thead><tr><th scope="col">Plant</th><th scope="col">Planted</th><th scope="col">Caught</th><th scope="col">Catch rate</th></tr></thead>
+  <tbody>
+  {% for r in s.plants.rows %}<tr><th scope="row">{{ r.plant }}</th><td>{{ r.planted }}</td><td>{{ r.caught }}</td><td>{{ r.catch_rate }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if s.plants.misses %}<p>Missed: {{ s.plants.misses | join('; ') }}</p>{% endif %}
+
+<h2>False alarms per clean loan</h2>
+<p><strong>{{ s.false_alarms.per_clean_loan }}</strong> ({{ s.false_alarms.alarms }} alarms on {{ s.false_alarms.clean_loans }} clean loans; {{ s.false_alarms.loans_with_alarm }} clean loans had at least one).</p>
+{% if s.false_alarms.by_check %}
+<table>
+  <thead><tr><th scope="col">Check</th><th scope="col">Alarms on clean loans</th></tr></thead>
+  <tbody>{% for k, n in s.false_alarms.by_check %}<tr><th scope="row">{{ k }}</th><td>{{ n }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endif %}
+
+<h2>Replay matches</h2>
+<p><strong>{{ s.replay.matched }} of {{ s.replay.loans }}</strong> frozen assessments replay to the same result{% if s.replay.all_match %} (all match){% endif %}.</p>
+{% if s.replay.mismatches %}<ul>{% for m in s.replay.mismatches %}<li>{{ m }}</li>{% endfor %}</ul>{% endif %}
+
+<h2>Time-leak guard</h2>
+<p><strong>{{ s.time_leak.violations }} violations</strong>{% if s.time_leak.clean %} (clean){% else %} (rows observed after a decision date were visible){% endif %}. Across {{ s.time_leak.loans }} loans, {{ s.time_leak.hidden_rows }} rows were observed after their decision date and correctly hidden; {{ s.time_leak.visible_rows }} were visible.</p>
+
+<h2>Metric discrimination (top {{ s.top_metrics | length }} of {{ s.metric_count }} by AUC)</h2>
+<table>
+  <thead><tr><th scope="col">Metric</th><th scope="col">AUC</th><th scope="col">KS</th><th scope="col">Riskier when</th><th scope="col">Loans</th><th scope="col">Missing</th></tr></thead>
+  <tbody>
+  {% for m in s.top_metrics %}
+  <tr><th scope="row">{{ m.metric }}</th><td>{{ m.auc }}</td><td>{{ m.ks }}</td><td>{{ m.direction }}</td><td>{{ m.n }}</td><td>{{ m.none_share }}</td></tr>
+  {% else %}<tr><td colspan="6">No metric statistics in the report.</td></tr>{% endfor %}
+  </tbody>
+</table>
+<p class="meta">AUC and KS measure separation of the planted labels on a tiny synthetic cohort. They are not evidence about real repayment.</p>
+{% endif %}
+{% endblock %}
