@@ -11,10 +11,18 @@
     {% else %}
       <span class="chip" title="Origin">{{ icon('ruler') }}origin: {{ f.origin }}</span>
     {% endif %}
+    {% if f.replaces_id %}<span class="chip" title="This finding corrects an earlier one the agent recorded">{{ icon('check') }}corrected</span>{% endif %}
     <span class="pill rs-{{ f.review_state }}" title="Review state">{{ f.review_state }}</span>
     <a class="trace-link" href="/cases/{{ c.id }}/findings/{{ f.id }}/trace">Trace to source{{ icon('arrow-right') }}</a>
   </div>
   {% include "_unmatched.html" %}
+  {% if f.corrections %}
+  <details><summary>Superseded earlier version{{ '' if f.corrections | length == 1 else 's' }} ({{ f.corrections | length }})</summary>
+    <ul class="history">{% for x in f.corrections %}<li><span>{{ x.summary }}<br>
+      <span class="when">{% if x.verified %}verified{% else %}unverified{% if x.unmatched_numbers %}: numbers not found in cited results: {{ x.unmatched_numbers | join(', ') }}{% endif %}{% endif %}
+      · <a href="/cases/{{ c.id }}/findings/{{ x.id }}/trace">trace</a></span></span></li>{% endfor %}</ul>
+  </details>
+  {% endif %}
   {% if f.actions %}
   <details><summary>Review history ({{ f.actions | length }})</summary>
     <ul class="history">{% for a in f.actions %}<li><span class="avatar">{{ a.by[:1] }}</span><span><strong>{{ a.by }}</strong> {{ a.action | humanize | lower }} — {{ a.reason }}<br><span class="when">{{ a.at | when }}</span></span></li>{% endfor %}</ul>

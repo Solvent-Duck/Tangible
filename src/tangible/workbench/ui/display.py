@@ -185,10 +185,44 @@ def pipes(v: Any) -> Markup:
     return Markup('<span class="pipe">|</span>'.join(parts))
 
 
+# Human labels for metric keys (the key stays visible beside it for traceability).
+METRIC_LABELS: dict[str, str] = {
+    "net_revenue": "Net revenue (last 90 days)",
+    "refund_rate": "Refund rate",
+    "gross_margin_est": "Gross margin (estimated)",
+    "repeat_customer_share": "Repeat-customer share of revenue",
+    "days_of_inventory": "Days of inventory",
+    "aged_stock_share": "Aged stock share",
+    "cash_runway": "Cash runway",
+    "payables_discipline": "Payables paid on time",
+    "payout_lag": "Payout lag (median)",
+    "history_days": "Trading history",
+    "payables_days": "Days to pay suppliers",
+    "revenue_growth_30v30": "Revenue growth (30 vs prior 30 days)",
+    "revenue_slope_13w": "Revenue trend (13 weeks)",
+    "revenue_break_26w": "Revenue break vs 26-week range",
+    "refund_rate_change_30v30": "Refund rate change (30 vs prior 30 days)",
+    "ad_spend_ratio_change_30v30": "Ad spend ratio change (30 vs prior 30 days)",
+    "revenue_yoy_90d": "Revenue vs a year earlier (90 days)",
+    "payout_lag_change_30v30": "Payout lag change (now vs 30 days ago)",
+    "payout_lag_slope_13w": "Payout lag trend (13 weeks)",
+    "days_of_inventory_change_30v30": "Days of inventory change (now vs 30 days ago)",
+    "days_of_inventory_slope_13w": "Days of inventory trend (13 weeks)",
+    "payables_days_change_30v30": "Days to pay suppliers change (now vs 30 days ago)",
+    "payables_days_slope_13w": "Days to pay suppliers trend (13 weeks)",
+}
+
+
+def metric_label(key: Any) -> str:
+    k = str(key or "")
+    return METRIC_LABELS.get(k) or humanize(k)
+
+
 FILTERS = {
     "when": when,
     "amount": amount,
     "metric_value": metric_value,
+    "metric_label": metric_label,
     "short_id": short_id,
     "humanize": humanize,
     "markdown": markdown,

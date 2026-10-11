@@ -73,7 +73,7 @@
   {% if metrics %}
   <table class="table hover metrics"><caption class="sr">Baseline metrics</caption>
   <thead><tr><th scope="col">Metric</th><th scope="col" class="num">Value</th><th scope="col" class="num">Version</th></tr></thead>
-  <tbody>{% for m in metrics %}<tr><th scope="row">{{ m.key }}</th><td class="num">{{ m.value | metric_value(m.key) }}</td><td class="num ver">v{{ m.version }}</td></tr>{% endfor %}</tbody></table>
+  <tbody>{% for m in metrics %}<tr><th scope="row">{{ m.key | metric_label }} <small class="mono" style="color:var(--ink-3)">{{ m.key }}</small></th><td class="num">{{ m.value | metric_value(m.key) }}</td><td class="num ver">v{{ m.version }}</td></tr>{% endfor %}</tbody></table>
   {% else %}
   <div class="empty">{{ icon('layers') }}<strong>No metrics yet.</strong><span>They appear after the investigation's baseline runs.</span></div>
   {% endif %}

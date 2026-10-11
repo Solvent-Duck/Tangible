@@ -85,7 +85,7 @@ def test_gate_flow_through_html(stack: Stack) -> None:  # noqa: F811
     plan_and_investigate(stack, case_id)
     page = ui(stack, "GET", base, "ana", 200).text
     assert "<strong>review</strong>" in page
-    assert "Baseline metrics" in page and '<th scope="row">refund_rate' in page
+    assert "Baseline metrics" in page and '<th scope="row">Refund rate <small' in page
 
     findings = db_one(stack, "SELECT count(*) FROM finding WHERE case_id = %s", case_id)
     assert findings
@@ -486,3 +486,38 @@ def test_agent_wrap_up_is_shown_escaped(stack: Stack) -> None:  # noqa: F811
     assert "Agent&#39;s wrap-up" in page or "Agent's wrap-up" in page
     assert "Checked, nothing found: payables." in page
     assert SCRIPT not in page
+
+
+def test_superseded_versions_and_metric_labels_on_the_case_page(stack: Stack) -> None:  # noqa: F811
+    case_id = make_case(stack)
+    with tenant_session(stack.w.url, stack.w.tenant) as conn:
+        call_id = _insert_tool_call(conn, stack.w, case_id, {"v": "0.5"})
+        draft = FindingDraft("agent:gap", 1, "review", "integrity", "Gap of 7.0%")
+        old = insert_finding(
+            conn, stack.w.tenant, stack.w.borrower, draft,
+            origin="model", case_id=case_id, tool_call_ids=[call_id], verified=False,
+        )  # fmt: skip
+        insert_finding(
+            conn, stack.w.tenant, stack.w.borrower,
+            FindingDraft("agent:gap-fixed", 1, "review", "integrity", "Gap of 50.0%"),
+            origin="model", case_id=case_id, tool_call_ids=[call_id], verified=True,
+            replaces_id=old,
+        )  # fmt: skip
+        conn.execute(
+            "INSERT INTO metric_value (tenant_id, borrower_id, metric_key, metric_version, as_of, "
+            "value, input_hash) VALUES (%s, %s, 'refund_rate', 1, %s, 0.0219, 'h')",
+            (stack.w.tenant, stack.w.borrower, stack.w.as_of),
+        )
+    page = ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
+    assert "Gap of 50.0%" in page and "corrected</span>" in page
+    assert "Superseded earlier version (1)" in page and "Gap of 7.0%" in page
+    assert page.index("Gap of 50.0%") < page.index("Superseded earlier version")
+    assert "Refund rate" in page and "refund_rate" in page  # label, with the key kept beside it
+
+
+def test_every_released_metric_has_a_display_label() -> None:
+    from tangible.metrics.sets import METRIC_SETS
+    from tangible.workbench.ui.display import METRIC_LABELS
+
+    keys = {key for members in METRIC_SETS.values() for key, _ in members}
+    assert keys - set(METRIC_LABELS) == set()
