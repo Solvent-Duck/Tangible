@@ -46,6 +46,9 @@ class ToolContext:
     document_client: ModelClient | None = None
     evidence_store: EvidenceStore | None = None
     web_provider: Any = None
+    # Intangibles v1: place_search / web_search / rdap_lookup go through a SignalProvider
+    # (tangible.web.signals; fixtures only for now). None = those tools report "not available".
+    signal_provider: Any = None
 
 
 ToolFn = Callable[[ToolContext, dict[str, Any]], Any]
@@ -105,6 +108,7 @@ def open_context(
     document_client: ModelClient | None = None,
     evidence_store: EvidenceStore | None = None,
     web_provider: Any = None,
+    signal_provider: Any = None,
 ) -> ToolContext:
     """Load the borrower's ledger, freeze the as-of view into a snapshot under `workdir`."""
     if policy.parsed is None:
@@ -115,7 +119,7 @@ def open_context(
     return ToolContext(
         conn, case, ledger, known, snapshot,
         policy.parsed.metric_set, policy.parsed.check_set, verifier,
-        document_client, evidence_store, web_provider,
+        document_client, evidence_store, web_provider, signal_provider,
     )  # fmt: skip
 
 

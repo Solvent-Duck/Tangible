@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Briefcase, Search } from "lucide-react";
+import { ArrowRight, Briefcase, Search, Ship } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -14,7 +14,7 @@ import { Empty, Notice, Skeleton } from "@/components/ui/misc";
 import { useApi } from "@/lib/api";
 import { CASE_STATUS } from "@/lib/labels";
 import { useMembership } from "@/lib/session";
-import type { CaseRow } from "@/lib/types";
+import type { BookExposure, CaseRow } from "@/lib/types";
 import { cn, date, money } from "@/lib/utils";
 
 const FILTERS = [
@@ -36,6 +36,10 @@ export default function CasesPage() {
   const { membership } = useMembership();
   const analyst = membership?.role === "analyst";
   const q = useQuery({ queryKey: ["cases", membership?.tenant_id], queryFn: () => api<CaseRow[]>("/api/cases") });
+  const book = useQuery({
+    queryKey: ["exposure", membership?.tenant_id],
+    queryFn: () => api<BookExposure[]>("/api/cases/exposure"),
+  });
   const [filter, setFilter] = useState(analyst ? "active" : "all");
   const [text, setText] = useState("");
   const f = FILTERS.find((x) => x.id === filter)!;
@@ -150,6 +154,46 @@ export default function CasesPage() {
           </div>
         )}
       </Card>
+      {book.data && book.data.length > 0 && (
+        <Card className="mt-6 overflow-hidden">
+          <div className="px-5 pt-4 pb-3">
+            <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+              <Ship className="size-4 text-faint" /> Book exposure to tariff actions
+            </h2>
+            <p className="mt-0.5 text-[13px] text-muted">
+              Borrowers whose stated imports a tariff action covers, at each case&apos;s date. Only enacted or announced
+              actions count, by publication date; Tangible does not forecast tariffs.
+            </p>
+          </div>
+          <div className="overflow-x-auto border-t border-line">
+            <table className="w-full min-w-[520px] text-[13.5px]">
+              <thead>
+                <tr className="text-left text-[12px] text-faint">
+                  <th className="px-5 py-2 font-medium">Action</th>
+                  <th className="px-3 py-2 font-medium">Effective</th>
+                  <th className="px-3 py-2 text-right font-medium">Borrowers</th>
+                  <th className="px-3 py-2 text-right font-medium">Share of requested</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {book.data.map((a) => (
+                  <tr key={a.document_number}>
+                    <td className="px-5 py-2.5">
+                      <p className="font-medium">{a.document_number}</p>
+                      {a.title && <p className="text-[12px] text-faint">{a.title}</p>}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted">{a.effective_on ?? "—"}</td>
+                    <td className="tabular px-3 py-2.5 text-right">{a.n}</td>
+                    <td className="tabular px-3 py-2.5 text-right">
+                      {a.share != null ? `${Math.round(Number(a.share) * 100)}%` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </Page>
   );
 }

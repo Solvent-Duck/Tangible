@@ -33,7 +33,7 @@ def test_ms2_resolves_and_policy_metrics_are_in_it():
     from tangible.policy import load_policy
 
     keys = {k for k, _ in metric_set("ms-2")}
-    policy = load_policy(Path(__file__).parent.parent / "policies/default.yaml")
+    policy = load_policy(Path(__file__).parent.parent / "policies/default-0.3.0.yaml")
     assert policy.parsed is not None and policy.parsed.metric_set == "ms-2"
     used = {c.metric for b in policy.parsed.bands for c in b.when}
     used |= {policy.parsed.limit.base_metric, policy.parsed.limit.history.metric}
@@ -57,5 +57,7 @@ def test_policies_pin_the_matching_check_sets():
     from tangible.policy import load_policy
 
     root = Path(__file__).parent.parent / "policies"
-    assert load_policy(root / "default.yaml").parsed.check_set == "cs-4"  # type: ignore[union-attr]
+    assert load_policy(root / "default.yaml").parsed.check_set == "cs-6"  # type: ignore[union-attr]
+    assert load_policy(root / "default-0.4.0.yaml").parsed.check_set == "cs-5"  # type: ignore[union-attr]
+    assert load_policy(root / "default-0.3.0.yaml").parsed.check_set == "cs-4"  # type: ignore[union-attr]
     assert load_policy(root / "default-0.2.2.yaml").parsed.check_set == "cs-3"  # type: ignore[union-attr]

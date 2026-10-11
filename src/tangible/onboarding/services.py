@@ -25,8 +25,10 @@ from uuid import UUID
 
 from tangible.db.repo import create_borrower
 from tangible.db.session import Conn, tenant_session
+from tangible.db.signals import insert_application
 from tangible.documents.upload import store_upload
 from tangible.evidence.store import LocalEvidenceStore
+from tangible.ledger.types import Application, ImportLine
 from tangible.notify import mail
 from tangible.onboarding import catalog
 from tangible.workbench import audit
@@ -248,13 +250,14 @@ def _stage(events: list[dict[str, Any]], case_status: str | None) -> str:
 
 def _latest_profile(conn: Conn, borrower_id: str) -> dict[str, Any] | None:
     row = conn.execute(
-        f"SELECT {', '.join(PROFILE_FIELDS)}, observed_at FROM borrower_profile "
+        f"SELECT {', '.join(PROFILE_FIELDS)}, import_mix, observed_at FROM borrower_profile "
         "WHERE borrower_id = %s ORDER BY observed_at DESC, id DESC LIMIT 1",
         (borrower_id,),
     ).fetchone()
     if row is None:
         return None
-    out: dict[str, Any] = _j(dict(zip((*PROFILE_FIELDS, "observed_at"), row, strict=True)))
+    keys = (*PROFILE_FIELDS, "import_mix", "observed_at")
+    out: dict[str, Any] = _j(dict(zip(keys, row, strict=True)))
     return out
 
 
@@ -279,6 +282,8 @@ def _coverage(
                 done = profile.get("year_founded") is not None
             elif item["id"] == "website":
                 done = bool(profile.get("website"))
+            elif item["id"] == "import_mix":
+                done = profile.get("import_mix") is not None
         out.append({**item, "done": done, "responses": responses})
     return out
 
@@ -747,8 +752,45 @@ def _missing_for_submit(profile: dict[str, Any] | None, items: list[dict[str, An
     return missing
 
 
+MAX_IMPORT_LINES = 20
+
+
+def _import_mix(raw: Any) -> list[ImportLine] | None:
+    """The stated import mix: None (not stated), [] (imports nothing) or up to 20 lines of
+    {hs_chapter: two digits, country: ISO alpha-2, share_of_cogs: 0..1}, summing to at most 1."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or len(raw) > MAX_IMPORT_LINES:
+        raise Invalid(f"imports must be a list of at most {MAX_IMPORT_LINES} lines")
+    lines: list[ImportLine] = []
+    for n, x in enumerate(raw, start=1):
+        if not isinstance(x, dict):
+            raise Invalid(f"import line {n} is not valid")
+        hs = str(x.get("hs_chapter", "")).strip().zfill(2)
+        country = str(x.get("country", "")).strip().upper()
+        if not (len(hs) == 2 and hs.isdigit() and hs != "00"):
+            raise Invalid(f"import line {n}: the HS chapter must be two digits (01-99)")
+        if not (len(country) == 2 and country.isalpha() and country.isascii()):
+            raise Invalid(f"import line {n}: the country must be a two-letter code")
+        try:
+            share = Decimal(str(x.get("share_of_cogs", "")).strip())
+        except InvalidOperation:
+            raise Invalid(f"import line {n}: the share must be a number") from None
+        if not share.is_finite() or not Decimal(0) < share <= 1:
+            raise Invalid(f"import line {n}: the share must be above 0 and at most 100%")
+        lines.append(ImportLine(hs, country, share.quantize(Decimal("0.0001"))))
+    if sum((x.share_of_cogs for x in lines), Decimal(0)) > 1:
+        raise Invalid("import shares add up to more than 100% of cost of goods")
+    return lines
+
+
 def save_profile(conn: Conn, p: Principal, body: dict[str, Any]) -> dict[str, Any]:
-    """A new profile row (a correction never overwrites). Untrusted text, length-limited."""
+    """A new profile row (a correction never overwrites). Untrusted text, length-limited.
+
+    Also appends an `application` ledger row (source_ref `onboarding:<borrower>`), observed now:
+    the identity fields drive public-signal matching and the import mix drives the tariff stress.
+    A later save is a revision with the same source_ref, so a case sees what was stated by its
+    as_of date (the time rule)."""
     borrower_id = _borrower(p)
     inv = _current_invite(conn, borrower_id)
     year = body.get("year_founded")
@@ -761,7 +803,7 @@ def save_profile(conn: Conn, p: Principal, body: dict[str, Any]) -> dict[str, An
         if not 1800 <= year_founded <= _clock(conn).year:
             raise Invalid("year founded is out of range")
     state = _text(body.get("state"), "state", 2)
-    values = {
+    values: dict[str, Any] = {
         "legal_name": _text(body.get("legal_name"), "legal name", required=True),
         "dba": _text(body.get("dba"), "DBA"),
         "website": _url(body["website"], "website") if body.get("website") else None,
@@ -772,11 +814,48 @@ def save_profile(conn: Conn, p: Principal, body: dict[str, Any]) -> dict[str, An
         "year_founded": year_founded,
         "stated_revenue_90d": _money(body.get("stated_revenue_90d"), "revenue"),
     }
+    imports = _import_mix(body.get("import_mix"))
+    mix_json = (
+        None
+        if imports is None
+        else json.dumps(
+            [
+                {
+                    "hs_chapter": x.hs_chapter,
+                    "country": x.country,
+                    "share_of_cogs": str(x.share_of_cogs),
+                }
+                for x in imports
+            ]
+        )  # fmt: skip
+    )
+    observed = _clock(conn)
     conn.execute(
         f"INSERT INTO borrower_profile (tenant_id, borrower_id, {', '.join(PROFILE_FIELDS)}, "
-        f"submitted_by) VALUES (%s, %s, {', '.join(['%s'] * len(PROFILE_FIELDS))}, %s)",
-        (p.tenant_id, borrower_id, *(values[f] for f in PROFILE_FIELDS), p.subject),
-    )
+        f"import_mix, observed_at, submitted_by) VALUES (%s, %s, "
+        f"{', '.join(['%s'] * len(PROFILE_FIELDS))}, %s::jsonb, %s, %s)",
+        (p.tenant_id, borrower_id, *(values[f] for f in PROFILE_FIELDS), mix_json, observed,
+         p.subject),
+    )  # fmt: skip
+    insert_application(
+        conn, p.tenant_id, borrower_id,
+        Application(
+            source_ref=f"onboarding:{borrower_id}",
+            stated_revenue_90d=values["stated_revenue_90d"],
+            own_account_names=(),
+            owner_names=(),
+            observed_at=observed,
+            legal_name=values["legal_name"],
+            dba=values["dba"],
+            address=values["address"],
+            phone=values["phone"],
+            website=values["website"],
+            state=values["state"],
+            naics=values["naics"],
+            requested_amount=inv.loan_amount,
+            import_mix=tuple(imports) if imports is not None else None,
+        ),
+    )  # fmt: skip
     _event(conn, p.tenant_id, inv.id, "profile_saved", p.subject)
     return onboarding_state(conn, p)
 

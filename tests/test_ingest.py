@@ -150,7 +150,8 @@ def test_rls_hides_other_tenants_ledger(test_db_url: str, data: tuple[Path, Path
             row = conn.execute(f"SELECT count(*) FROM {table}").fetchone()  # noqa: S608
             assert row == (0,), table
         empty = load_ledger(conn, ba)
-    assert empty == Ledger()
+    # Macro signals are global by design (a tariff applies to everyone), not tenant rows.
+    assert dataclasses.replace(empty, macro_signals=()) == Ledger()
     with tenant_session(test_db_url, ta) as conn:
         assert load_ledger(conn, ba).orders
 

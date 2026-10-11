@@ -1,0 +1,18 @@
+{
+ "objectClassName": "domain",
+ "ldhName": "copperlinehardware.example",
+ "events": [
+  {
+   "eventAction": "registration",
+   "eventDate": "2012-02-08T09:00:00Z"
+  }
+ ],
+ "entities": [
+  {
+   "roles": [
+    "registrar"
+   ],
+   "name": "Example Registrar, Inc."
+  }
+ ]
+}

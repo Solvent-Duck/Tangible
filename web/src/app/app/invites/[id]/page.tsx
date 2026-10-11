@@ -181,6 +181,7 @@ function Checklist({ items }: { items: CoverageItem[] }) {
     reputation: "Reputation & loyalty",
     longevity: "Longevity & entity",
     community: "Community",
+    supply: "Supply chain & tariffs",
     custom: "Your custom requests",
   };
   return (
@@ -245,6 +246,18 @@ function ProfileCard({ d }: { d: InviteDetail }) {
             <Row k="NAICS" v={p.naics} />
             <Row k="Address" v={p.address} />
             <Row k="Stated revenue (90 days)" v={p.stated_revenue_90d ? money(p.stated_revenue_90d) : null} />
+            <Row
+              k="Imports (share of cost of goods)"
+              v={
+                p.import_mix === null
+                  ? null
+                  : p.import_mix.length === 0
+                    ? "None"
+                    : p.import_mix
+                        .map((x) => `HS ${x.hs_chapter} from ${x.country}: ${Math.round(Number(x.share_of_cogs) * 100)}%`)
+                        .join("; ")
+              }
+            />
             <Row
               k="Website"
               v={

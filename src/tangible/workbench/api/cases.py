@@ -64,6 +64,12 @@ def create_case(body: CreateCase, conn: ConnDep, p: PrincipalDep) -> dict[str, A
     )  # fmt: skip
 
 
+@router.get("/exposure")
+def exposure(conn: ConnDep, p: PrincipalDep) -> list[dict[str, Any]]:
+    """Book exposure to tariff actions across the cases this caller can see. Display only."""
+    return services.book_exposure(conn, services.list_cases(conn, p))
+
+
 @router.get("/lookups")
 def lookups(conn: ConnDep, p: PrincipalDep) -> dict[str, Any]:
     """Borrowers and analysts, for the new-case form (credit admin only)."""

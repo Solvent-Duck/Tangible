@@ -8,6 +8,7 @@ import {
   Link2,
   Megaphone,
   Plug,
+  Ship,
   Star,
   Store,
   Type,
@@ -21,6 +22,7 @@ export const GROUP_ICONS: Record<string, LucideIcon> = {
   reputation: Star,
   longevity: Clock3,
   community: Megaphone,
+  supply: Ship,
   custom: FileUp,
 };
 

@@ -355,3 +355,42 @@ def test_invites_and_events_are_append_only(on: On) -> None:
         with pytest.raises(psycopg.Error), tenant_session(on.url, on.tenant) as conn:
             conn.execute(sql)
     assert sent["id"]
+
+
+# ---------------------------------------------------------------- application ledger row
+
+
+def test_profile_writes_an_application_row_with_the_import_mix(on: On) -> None:
+    sent = on.invite(items=["import_mix", "entity"])
+    on.accept(token_of(sent["link"]), "owner")
+    on.call("POST", "/api/onboarding/profile", "owner", 422, json={
+        "legal_name": "Acme LLC", "import_mix": [{"hs_chapter": "9", "country": "CHN",
+                                                  "share_of_cogs": 0.5}]})  # fmt: skip
+    on.call("POST", "/api/onboarding/profile", "owner", 422, json={
+        "legal_name": "Acme LLC", "import_mix": [
+            {"hs_chapter": "94", "country": "CN", "share_of_cogs": 0.7},
+            {"hs_chapter": "73", "country": "VN", "share_of_cogs": 0.4}]})  # fmt: skip
+    st = on.call("POST", "/api/onboarding/profile", "owner", 200, json={
+        "legal_name": "Acme Hardware LLC", "state": "OR", "website": "acme.test",
+        "import_mix": [{"hs_chapter": "94", "country": "cn", "share_of_cogs": "0.6"}]})  # fmt: skip
+    assert next(i for i in st["items"] if i["id"] == "import_mix")["done"]
+    with tenant_session(on.url, on.tenant) as conn:
+        rows = conn.execute(
+            "SELECT source_ref, legal_name, state, website, requested_amount, import_mix "
+            "FROM application WHERE borrower_id = %s ORDER BY observed_at",
+            (sent["borrower_id"],),
+        ).fetchall()
+    assert len(rows) == 1  # refused saves wrote nothing
+    ref, name, state, site, amount, mix = rows[0]
+    assert ref == f"onboarding:{sent['borrower_id']}" and name == "Acme Hardware LLC"
+    assert (state, site, str(amount)) == ("OR", "https://acme.test", "75000.00")
+    assert mix == [{"hs_chapter": "94", "country": "CN", "share_of_cogs": "0.6000"}]
+    # a correction is a new row with the same source_ref; "imports nothing" is an empty list
+    on.call("POST", "/api/onboarding/profile", "owner", 200,
+            json={"legal_name": "Acme Hardware LLC", "import_mix": []})  # fmt: skip
+    with tenant_session(on.url, on.tenant) as conn:
+        mixes = [r[0] for r in conn.execute(
+            "SELECT import_mix FROM application WHERE borrower_id = %s ORDER BY observed_at",
+            (sent["borrower_id"],),
+        ).fetchall()]  # fmt: skip
+    assert mixes == [[{"hs_chapter": "94", "country": "CN", "share_of_cogs": "0.6000"}], []]

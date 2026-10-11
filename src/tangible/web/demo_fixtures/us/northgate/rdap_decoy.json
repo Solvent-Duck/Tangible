@@ -1,0 +1,18 @@
+{
+ "objectClassName": "domain",
+ "ldhName": "northgate-spokane.example",
+ "events": [
+  {
+   "eventAction": "registration",
+   "eventDate": "2009-02-02T10:00:00Z"
+  }
+ ],
+ "entities": [
+  {
+   "roles": [
+    "registrar"
+   ],
+   "name": "Example Registrar, Inc."
+  }
+ ]
+}

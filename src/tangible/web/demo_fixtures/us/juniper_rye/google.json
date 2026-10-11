@@ -1,0 +1,100 @@
+{
+ "places": [
+  {
+   "id": "gp-juniper-rye-division",
+   "displayName": {
+    "text": "Juniper & Rye Bakery"
+   },
+   "formattedAddress": "2231 SE Division St, Portland, OR 97202, USA",
+   "nationalPhoneNumber": "(503) 555-0142",
+   "websiteUri": "https://juniperandrye.example/",
+   "googleMapsUri": "https://maps.google.com/?cid=1000000000000000001",
+   "rating": 4.7,
+   "userRatingCount": 212,
+   "businessStatus": "OPERATIONAL",
+   "firstReviewTime": "2017-05-14",
+   "reviews": [
+    {
+     "text": {
+      "text": "We've been coming here every Saturday for years. The rye sourdough is the best in town."
+     },
+     "rating": 5,
+     "publishTime": "2026-09-20T15:00:00Z",
+     "ownerReply": true
+    },
+    {
+     "text": {
+      "text": "Regulars know to come before 9 for the cardamom buns. Staff remember our order."
+     },
+     "rating": 5,
+     "publishTime": "2026-09-02T15:00:00Z",
+     "ownerReply": true
+    },
+    {
+     "text": {
+      "text": "Great croissants, a little pricey."
+     },
+     "rating": 4,
+     "publishTime": "2026-08-28T15:00:00Z",
+     "ownerReply": false
+    },
+    {
+     "text": {
+      "text": "My go-to for birthday cakes since 2019."
+     },
+     "rating": 5,
+     "publishTime": "2026-08-11T15:00:00Z",
+     "ownerReply": true
+    },
+    {
+     "text": {
+      "text": "Line was long but worth it."
+     },
+     "rating": 4,
+     "publishTime": "2026-07-30T15:00:00Z",
+     "ownerReply": true
+    },
+    {
+     "text": {
+      "text": "Keep coming back for the seasonal galettes."
+     },
+     "rating": 5,
+     "publishTime": "2026-07-14T15:00:00Z",
+     "ownerReply": true
+    },
+    {
+     "text": {
+      "text": "Coffee was lukewarm today."
+     },
+     "rating": 3,
+     "publishTime": "2026-07-02T15:00:00Z",
+     "ownerReply": true
+    },
+    {
+     "text": {
+      "text": "Lovely bakery, friendly people."
+     },
+     "rating": 5,
+     "publishTime": "2026-06-19T15:00:00Z",
+     "ownerReply": false
+    },
+    {
+     "text": {
+      "text": "Three generations of my family are loyal customers here."
+     },
+     "rating": 5,
+     "publishTime": "2026-06-01T15:00:00Z",
+     "ownerReply": true
+    },
+    {
+     "text": {
+      "text": "Good bread, small seating area."
+     },
+     "rating": 4,
+     "publishTime": "2026-05-22T15:00:00Z",
+     "ownerReply": false
+    }
+   ]
+  }
+ ]
+}

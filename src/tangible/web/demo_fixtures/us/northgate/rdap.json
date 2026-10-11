@@ -1,0 +1,18 @@
+{
+ "objectClassName": "domain",
+ "ldhName": "northgatephonerepair.example",
+ "events": [
+  {
+   "eventAction": "registration",
+   "eventDate": "2025-10-20T21:10:00Z"
+  }
+ ],
+ "entities": [
+  {
+   "roles": [
+    "registrar"
+   ],
+   "name": "Example Registrar, Inc."
+  }
+ ]
+}

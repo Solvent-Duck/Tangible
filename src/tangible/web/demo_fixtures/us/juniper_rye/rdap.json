@@ -1,0 +1,22 @@
+{
+ "objectClassName": "domain",
+ "ldhName": "juniperandrye.example",
+ "events": [
+  {
+   "eventAction": "registration",
+   "eventDate": "2016-09-21T18:22:04Z"
+  },
+  {
+   "eventAction": "expiration",
+   "eventDate": "2027-09-21T18:22:04Z"
+  }
+ ],
+ "entities": [
+  {
+   "roles": [
+    "registrar"
+   ],
+   "name": "Example Registrar, Inc."
+  }
+ ]
+}

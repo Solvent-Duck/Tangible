@@ -26,7 +26,7 @@ export type CatalogItem = {
   label: string;
   help: string;
   kind: ItemKind;
-  feeds: "ledger" | "intangibles" | "lender";
+  feeds: "ledger" | "intangibles" | "systemic" | "lender";
   locked: boolean;
   default_on?: boolean;
   providers: string[];
@@ -102,6 +102,7 @@ export type Profile = {
   naics: string | null;
   year_founded: number | null;
   stated_revenue_90d: string | null;
+  import_mix: { hs_chapter: string; country: string; share_of_cogs: string }[] | null;
   observed_at: string;
 };
 
@@ -227,7 +228,46 @@ export type RunNotices = {
   } | null;
 };
 
-export type CaseStatus = { id: string; status: string } & Partial<RunNotices>;
+export type FeedLine = { at: number; agent: string; kind: string; text: string };
+
+export type CaseStatus = { id: string; status: string; feed?: FeedLine[] } & Partial<RunNotices>;
+
+export type PublicSignalRow = {
+  source: string;
+  source_ref: string;
+  score: string;
+  on_file: boolean;
+  name: string;
+  address: string | null;
+  rating: number | null;
+  review_count: number | null;
+  status: string | null;
+  registered_on: string | null;
+};
+
+export type Systemic = {
+  stated: boolean;
+  lines: { hs_chapter: string; country: string; share: string; added_duty: string; actions: string[] }[];
+  actions: {
+    document_number: string;
+    title: string;
+    publication_date: string;
+    effective_on: string;
+    hs_chapters: string[];
+    countries: string[];
+    additional_duty: string;
+  }[];
+};
+
+export type BookExposure = {
+  document_number: string;
+  title: string | null;
+  effective_on: string | null;
+  n: number;
+  share: string | null;
+  amount: string;
+  total: string;
+};
 
 export type Metric = { key: string; version: number; value: string | null; label: string; text: string | null };
 
@@ -289,7 +329,18 @@ export type Workspace = Partial<RunNotices> & {
   plans?: Plan[];
   questions?: { id: string; body: string; created_at: string; approved: boolean; sent: boolean }[];
   usage?: { model_calls: number; cost_usd: string; priced: boolean; cost_text: string };
-  last_investigation?: { stop_reason?: string; wrap_up?: string; at?: string; [k: string]: unknown } | null;
+  last_investigation?: {
+    stop_reason?: string;
+    wrap_up?: string;
+    at?: string;
+    engine?: string;
+    agents?: Record<string, number>;
+    tool_calls?: Record<string, number>;
+    [k: string]: unknown;
+  } | null;
+  intangibles?: PublicSignalRow[];
+  systemic?: Systemic;
+  feed?: FeedLine[];
   metrics: Metric[];
   documents: {
     pull_id: string;

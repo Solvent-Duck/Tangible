@@ -14,8 +14,10 @@ import {
   LogOut,
   PartyPopper,
   Plug,
+  Plus,
   Send,
   ShieldCheck,
+  Trash2,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
@@ -202,7 +204,13 @@ function Wizard() {
             <strong>{s.lender_name}:</strong> {s.message}
           </Notice>
         )}
-        {current === "profile" && <ProfileStep profile={s.profile} onDone={() => go(1)} />}
+        {current === "profile" && (
+          <ProfileStep
+            profile={s.profile}
+            askImports={s.items.some((i) => i.id === "import_mix")}
+            onDone={() => go(1)}
+          />
+        )}
         {current === "connect" && <ConnectStep items={connectors} />}
         {current === "documents" && <DocumentsStep items={docs} />}
         {current === "review" && <ReviewStep s={s} goto={setStep} />}
@@ -225,7 +233,17 @@ function Wizard() {
 
 // ---------------------------------------------------------------- step 1: profile
 
-function ProfileStep({ profile, onDone }: { profile: Profile | null; onDone: () => void }) {
+type ImportRow = { hs_chapter: string; country: string; share: string };
+
+function ProfileStep({
+  profile,
+  askImports,
+  onDone,
+}: {
+  profile: Profile | null;
+  askImports: boolean;
+  onDone: () => void;
+}) {
   const api = useApi();
   const act = useAct();
   const [f, setF] = useState({
@@ -239,10 +257,31 @@ function ProfileStep({ profile, onDone }: { profile: Profile | null; onDone: () 
     naics: profile?.naics ?? "",
     stated_revenue_90d: profile?.stated_revenue_90d ?? "",
   });
+  const [noImports, setNoImports] = useState(profile?.import_mix?.length === 0);
+  const [imports, setImports] = useState<ImportRow[]>(
+    (profile?.import_mix ?? []).map((x) => ({
+      hs_chapter: x.hs_chapter,
+      country: x.country,
+      share: String(Math.round(Number(x.share_of_cogs) * 1000) / 10),
+    })),
+  );
+  const importMix = !askImports
+    ? (profile?.import_mix ?? null)
+    : noImports
+      ? []
+      : imports.filter((r) => r.hs_chapter || r.country || r.share).length
+        ? imports
+            .filter((r) => r.hs_chapter || r.country || r.share)
+            .map((r) => ({ hs_chapter: r.hs_chapter, country: r.country, share_of_cogs: Number(r.share) / 100 }))
+        : null;
   const save = useMutation({
     mutationFn: () =>
       api<OnboardingState>("/api/onboarding/profile", {
-        json: { ...f, stated_revenue_90d: f.stated_revenue_90d.replace(/[$,\s]/g, "") || null },
+        json: {
+          ...f,
+          stated_revenue_90d: f.stated_revenue_90d.replace(/[$,\s]/g, "") || null,
+          import_mix: importMix,
+        },
       }),
     onSuccess: (s) => {
       act.onSuccess(s);
@@ -291,6 +330,9 @@ function ProfileStep({ profile, onDone }: { profile: Profile | null; onDone: () 
           <Field label="Revenue, last 90 days" hint="your estimate" htmlFor="rev">
             <Input id="rev" inputMode="decimal" value={f.stated_revenue_90d} onChange={set("stated_revenue_90d")} placeholder="$120,000" />
           </Field>
+          {askImports && (
+            <ImportsEditor rows={imports} setRows={setImports} none={noImports} setNone={setNoImports} />
+          )}
           <div className="flex items-end justify-end sm:col-span-2">
             <Button variant="primary" disabled={save.isPending || !f.legal_name}>
               Save and continue <ArrowRight />
@@ -299,6 +341,50 @@ function ProfileStep({ profile, onDone }: { profile: Profile | null; onDone: () 
         </form>
       </CardBody>
     </Card>
+  );
+}
+
+function ImportsEditor({
+  rows,
+  setRows,
+  none,
+  setNone,
+}: {
+  rows: ImportRow[];
+  setRows: (r: ImportRow[]) => void;
+  none: boolean;
+  setNone: (v: boolean) => void;
+}) {
+  const set = (n: number, k: keyof ImportRow, v: string) => setRows(rows.map((r, i) => (i === n ? { ...r, [k]: v } : r)));
+  return (
+    <div className="rounded-xl border border-line p-4 sm:col-span-2">
+      <p className="text-[14px] font-medium">Imported goods</p>
+      <p className="text-[12.5px] text-muted">
+        Your lender asked what you import, so known tariff actions can be stress-tested. Use the two-digit HS chapter
+        (for example 94 for furniture) and the country the goods come from.
+      </p>
+      <label className="mt-3 flex items-center gap-2 text-[13px]">
+        <input type="checkbox" checked={none} onChange={(e) => setNone(e.target.checked)} className="accent-[var(--brand)]" />
+        We don&apos;t import goods
+      </label>
+      {!none && (
+        <div className="mt-3 space-y-2">
+          {rows.map((r, n) => (
+            <div key={n} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2">
+              <Input value={r.hs_chapter} onChange={(e) => set(n, "hs_chapter", e.target.value)} placeholder="HS chapter, e.g. 94" maxLength={2} aria-label="HS chapter" />
+              <Input value={r.country} onChange={(e) => set(n, "country", e.target.value.toUpperCase())} placeholder="Country, e.g. CN" maxLength={2} aria-label="Country" />
+              <Input value={r.share} onChange={(e) => set(n, "share", e.target.value)} placeholder="% of cost of goods" inputMode="decimal" aria-label="Share of cost of goods (%)" />
+              <Button type="button" variant="ghost" size="icon" onClick={() => setRows(rows.filter((_, i) => i !== n))} aria-label="Remove">
+                <Trash2 />
+              </Button>
+            </div>
+          ))}
+          <Button type="button" size="sm" onClick={() => setRows([...rows, { hs_chapter: "", country: "", share: "" }])} disabled={rows.length >= 20}>
+            <Plus /> Add a line
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 

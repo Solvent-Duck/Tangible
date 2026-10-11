@@ -28,14 +28,15 @@ The stages shown are derived from `invite_event` rows, never stored: `invited â†
 | Invites, tokens, accept, profile, uploads, links, submit, case opening | Real. Stored, append-only, RLS-scoped. |
 | Email | Outbox only (`outbound_email`). Set `TANGIBLE_SMTP_URL=smtp://127.0.0.1:1025` to also deliver to a local Mailpit. |
 | Connecting a source | Simulated. Consent is recorded as a `connection` row (source, read-only scopes, granted now); no data is pulled. The real connectors (`tangible.connectors`, Plaid and Rutter) can take over from that row once Plaid Link and Rutter Link are wired into the page. |
-| Intangibles items (presence, reputation, longevity, community) | Collected and shown to the lender. They are not scored until the intangibles pillar (branch `intangibles`) lands. |
+| Intangibles items (presence, reputation, longevity, community) | Shown to the lender. The profile's identity fields feed the search agents' entity matching; the ms-3 metrics score public signals, and policy 0.4.0 can lift a band one notch at most. Links the business adds are not yet read by the agents. |
+| Imported goods | Real. The stated import mix goes into the `application` row and drives the tariff stress (ms-4, policy 0.5.0 stressed limit). |
 
 ## Data
 
-Migration `0010_onboarding.sql` (0009 is taken by the intangibles branch):
+Migration `0011_onboarding.sql`:
 - **`invite`**: immutable. The raw token is never stored, only its SHA-256. A re-send is a new invite with `replaces_id`.
 - **`invite_event`**: append-only.
-- **`borrower_profile`**: append-only. When the intangibles `application` table merges, submission should also write an `application` row.
+- **`borrower_profile`**: append-only, including the stated `import_mix`. Each save also appends an `application` ledger row (`source_ref` `onboarding:<borrower>`), so a case sees what the business had stated by its as-of date.
 - **`outbound_email`**.
 - **`app_user`** gains the `borrower` role and `borrower_id`.
 - **Pre-tenant lookups**: `invite_by_token` and `memberships_for_subject` are `SECURITY DEFINER` functions, the only lookups made before a tenant is known.

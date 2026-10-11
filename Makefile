@@ -34,6 +34,7 @@ check: lint typecheck test
 #   AWS_PROFILE=tangible uv run --with "botocore[crt]" tangible-demo seed --run-agent
 # Then serve the API with the `workbench-demo` launch config (port 8001, same env, dev auth)
 # and the web app with TANGIBLE_API_URL=http://127.0.0.1:8001 make web-dev.
+# The agent runs on Strands Agents by default; TANGIBLE_AGENT_ENGINE=classic uses the old loop.
 demo: migrate
 	uv run tangible-demo seed
 

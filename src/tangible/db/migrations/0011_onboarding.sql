@@ -1,12 +1,13 @@
 -- Borrower onboarding: a lender invites a business by email, the business creates an account,
--- tells us who it is and connects its systems. Numbered 0010 because 0009 is reserved for the
--- intangibles branch (0009_public_signals.sql); the two touch different tables.
+-- tells us who it is and connects its systems.
+-- (Numbered after 0009_public_signals and 0010_macro_signals; it touches different tables.)
 --
 -- invite: immutable. The raw token is never stored, only its SHA-256. A re-send is a new invite.
 -- invite_event: append-only; an invite's status is derived from its events, never stored.
 -- borrower_profile: the borrower's own account of who it is. Append-only: a correction is a new
 --   row, and the latest one observed by a date is what was known then. Borrower-entered text is
---   untrusted data. (When the intangibles `application` table lands, submission also writes one.)
+--   untrusted data. Each save also appends an `application` row (source_ref onboarding:<borrower>)
+--   so the investigation's identity matching and the tariff stress read what the business stated.
 -- outbound_email: the non-production outbox. Every email the app "sends" is recorded here.
 
 -- ---------------------------------------------------------------- borrower users
@@ -69,6 +70,7 @@ CREATE TABLE borrower_profile (
     naics              text,
     year_founded       int,
     stated_revenue_90d numeric(14, 2),
+    import_mix         jsonb,  -- [{hs_chapter, country, share_of_cogs}]; [] = imports nothing
     observed_at        timestamptz NOT NULL DEFAULT clock_timestamp(),
     submitted_by       text NOT NULL
 );
@@ -140,4 +142,6 @@ BEGIN
     END LOOP;
 END $$;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tangible_app;
+-- Only the new tables: a blanket GRANT ON ALL TABLES would undo 0010's read-only macro_signal.
+GRANT SELECT, INSERT, UPDATE, DELETE ON invite, invite_event, borrower_profile, outbound_email
+    TO tangible_app;

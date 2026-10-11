@@ -239,7 +239,7 @@ function GroupCard({
                 <Lock /> Always included
               </Badge>
             )}
-            {intangible && <Badge tone="info">Intangibles · scoring rolling out</Badge>}
+            {intangible && <Badge tone="info">Intangibles</Badge>}
           </p>
           <p className="text-[12.5px] text-muted">{group.blurb}</p>
         </div>

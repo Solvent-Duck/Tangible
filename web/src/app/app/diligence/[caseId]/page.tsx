@@ -24,6 +24,7 @@ import { toast } from "sonner";
 
 import { Page, PageHeader } from "@/components/app/page-header";
 import { FindingCard, SEV } from "@/components/diligence/finding-card";
+import { PublicSignals, SystemicExposure, TeamFeed } from "@/components/diligence/signals";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -32,8 +33,8 @@ import { Field, Input, Textarea } from "@/components/ui/input";
 import { Empty, Notice, Skeleton } from "@/components/ui/misc";
 import { ApiError, useApi } from "@/lib/api";
 import { CASE_STATUS } from "@/lib/labels";
-import type { CaseStatus, Finding, Plan, Workspace } from "@/lib/types";
-import { cn, date, money, shortId } from "@/lib/utils";
+import type { CaseStatus, FeedLine, Finding, Plan, Workspace } from "@/lib/types";
+import { cn, date, humanize, money, shortId } from "@/lib/utils";
 
 const STEPS = [
   { id: "open", label: "Open" },
@@ -137,12 +138,16 @@ export default function CasePage() {
         }
       />
 
-      <StatusPanel c={c} live={live} analyst={analyst} />
+      <StatusPanel c={c} live={live} analyst={analyst} feed={status.data?.feed ?? c.feed ?? []} />
 
       <div className={cn("mt-6 grid gap-6", analyst && "xl:grid-cols-[minmax(0,1fr)_340px]")}>
         <div className="min-w-0 space-y-6">
           <Findings c={c} reviewable={analyst && c.status === "review"} />
           {analyst && c.last_investigation?.wrap_up && <WrapUp text={c.last_investigation.wrap_up} />}
+          {analyst && c.intangibles && c.intangibles.length > 0 && <PublicSignals rows={c.intangibles} />}
+          {analyst && c.systemic && (c.systemic.lines.length > 0 || c.systemic.actions.length > 0 || !c.systemic.stated) && (
+            <SystemicExposure s={c.systemic} />
+          )}
           <Metrics c={c} />
           {analyst && <PlanCard c={c} />}
           {analyst && <Documents c={c} />}
@@ -162,7 +167,17 @@ export default function CasePage() {
 
 // ---------------------------------------------------------------- status
 
-function StatusPanel({ c, live, analyst }: { c: Workspace; live: boolean; analyst: boolean }) {
+function StatusPanel({
+  c,
+  live,
+  analyst,
+  feed,
+}: {
+  c: Workspace;
+  live: boolean;
+  analyst: boolean;
+  feed: FeedLine[];
+}) {
   const at = ORDER[c.status] ?? 0;
   const finished = c.status === "signed" || c.status === "closed";
   return (
@@ -201,6 +216,7 @@ function StatusPanel({ c, live, analyst }: { c: Workspace; live: boolean; analys
           {c.run?.age_minutes != null && <span className="text-faint">Running {c.run.age_minutes} min.</span>}
         </p>
       )}
+      {live && feed.length > 0 && <TeamFeed lines={feed} />}
       {c.status === "closed" && (
         <p className="mt-4 text-[13px] text-muted">This case was re-based or closed; it is kept as a record.</p>
       )}
@@ -737,7 +753,31 @@ function RunCard({ c }: { c: Workspace }) {
             <dd className="truncate text-right font-mono text-[12px]">{c.last_investigation.stop_reason}</dd>
           </>
         )}
+        {c.last_investigation?.engine && (
+          <>
+            <dt className="text-muted">Engine</dt>
+            <dd className="text-right">
+              {c.last_investigation.engine === "strands" ? <Badge tone="brand">Strands Agents</Badge> : "classic loop"}
+            </dd>
+          </>
+        )}
       </dl>
+      {c.last_investigation?.agents && Object.keys(c.last_investigation.agents).length > 0 && (
+        <div className="mt-4 border-t border-line pt-3">
+          <p className="mb-2 text-[12px] font-medium text-muted">Agent team</p>
+          <ul className="space-y-1.5 text-[13px]">
+            {Object.entries(c.last_investigation.agents).map(([name, n]) => (
+              <li key={name} className="flex justify-between gap-2">
+                <span>{humanize(name)}</span>
+                <span className="tabular text-[12px] text-faint">
+                  {n} step{n === 1 ? "" : "s"}
+                  {c.last_investigation?.tool_calls && `, ${c.last_investigation.tool_calls[name] ?? 0} tool calls`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Card>
   );
 }

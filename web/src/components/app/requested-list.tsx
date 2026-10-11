@@ -8,6 +8,7 @@ const LABELS: Record<string, string> = {
   reputation: "Reputation & loyalty",
   longevity: "Longevity & entity",
   community: "Community",
+  supply: "Supply chain & tariffs",
   custom: "Also requested",
 };
 

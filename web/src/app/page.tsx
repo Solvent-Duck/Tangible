@@ -290,7 +290,7 @@ function WhatWeLookAt() {
           <SignalPanel title="Financials" tag="Scored today" items={financial} />
           <SignalPanel
             title="Intangibles"
-            tag="Collected now · scoring rolling out"
+            tag="Matched, then scored · lifts one notch at most"
             items={intangible}
             note="Intangibles can lift a band by one notch at most, never above B, and only from public signals matched to the business with analyst confirmation."
           />

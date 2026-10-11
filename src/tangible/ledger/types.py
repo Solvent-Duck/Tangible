@@ -1,5 +1,6 @@
 """Ledger rows as metrics and checks see them, plus the one place the time rule lives."""
 
+import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -135,12 +136,90 @@ class Connection:
 
 @dataclass(frozen=True)
 class Application:
+    """The loan application. The identity fields (legal_name .. naics, requested_amount) are the
+    v2 row shape; rows written before it read them as None. US addresses: `address` is the street
+    line plus city, `state` the two-letter code."""
+
     source_ref: str
     stated_revenue_90d: Decimal | None
     own_account_names: tuple[str, ...]
     owner_names: tuple[str, ...]
     observed_at: datetime
     evidence: EvidenceRef | None = None
+    legal_name: str | None = None
+    dba: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    website: str | None = None
+    state: str | None = None
+    naics: str | None = None
+    requested_amount: Decimal | None = None
+    # v3: stated imports (systemic-risk plan). None = not stated; () = stated "no imports".
+    import_mix: "tuple[ImportLine, ...] | None" = None
+
+
+@dataclass(frozen=True)
+class ImportLine:
+    """One line of the applicant's stated import mix: goods of an HS chapter from a country, as a
+    share of cost of goods sold. Self-reported (soft) in v1."""
+
+    hs_chapter: str  # two digits, e.g. "94"
+    country: str  # ISO 3166-1 alpha-2 of the goods' origin, e.g. "CN"
+    share_of_cogs: Decimal  # 0..1
+
+
+@dataclass(frozen=True)
+class MacroSignal:
+    """A dated public fact about the world (v1: a tariff action), global to every borrower.
+
+    Loaded only by the trusted loader. observed_at is when the fact became public (publication
+    date), never its effective date (occurred_at). `payload_json` is canonical JSON of the parsed
+    notice; it is external data: metrics read only codes, rates and dates from it.
+    """
+
+    source: str
+    source_ref: str
+    kind: str  # tariff_action
+    payload_json: str
+    observed_at: datetime
+    occurred_at: datetime | None = None
+    url: str | None = None
+    sha256: str | None = None
+    evidence: EvidenceRef | None = None
+
+
+SignalSource = Literal["google_places", "yelp", "rdap"]
+
+
+@dataclass(frozen=True)
+class PublicSignal:
+    """A public-web signal recorded by `record_signal` from a matched source result.
+
+    Append-only like every ledger row: a re-pull is a new row with the same (source, source_ref),
+    and `known` keeps the latest one observed by the as-of date. `payload_json` is canonical JSON
+    of the parsed source result (kept as a string so the row stays hashable); it is untrusted
+    data: metrics read only numbers, dates and flags from it, and text only through a versioned
+    keyword rule. `match_ok` is resolved when the ledger is loaded: the entity match scored at or
+    above the threshold with no analyst rejection, or an analyst confirmed it. Metrics use only
+    rows with `match_ok`.
+    """
+
+    source: str
+    source_ref: str
+    kind: str  # listing | domain_registration
+    payload_json: str
+    observed_at: datetime
+    occurred_at: datetime | None = None
+    url: str | None = None
+    sha256: str | None = None
+    match_score: Decimal | None = None
+    match_ok: bool = False
+    evidence: EvidenceRef | None = None
+
+    @property
+    def payload(self) -> dict[str, object]:
+        value = json.loads(self.payload_json)
+        return value if isinstance(value, dict) else {}
 
 
 @dataclass(frozen=True)
@@ -176,6 +255,17 @@ def _known[R: Revisable](rows: Iterable[R], as_of: datetime) -> tuple[R, ...]:
     return tuple(sorted(known, key=lambda r: (r.observed_at, r.source_ref)))
 
 
+def _known_signals(rows: Iterable[PublicSignal], as_of: datetime) -> tuple[PublicSignal, ...]:
+    """Signals are revised per (source, source_ref): a place id and a domain may collide."""
+    known = known_as_of(rows, as_of, key=lambda r: f"{r.source}\x00{r.source_ref}")
+    return tuple(sorted(known, key=lambda r: (r.observed_at, r.source, r.source_ref)))
+
+
+def _known_macro(rows: Iterable[MacroSignal], as_of: datetime) -> tuple[MacroSignal, ...]:
+    known = known_as_of(rows, as_of, key=lambda r: f"{r.source}\x00{r.source_ref}")
+    return tuple(sorted(known, key=lambda r: (r.observed_at, r.source, r.source_ref)))
+
+
 @dataclass(frozen=True)
 class Ledger:
     """A borrower's ledger rows. Metrics and checks take this plus an as_of."""
@@ -190,6 +280,8 @@ class Ledger:
     connections: tuple[Connection, ...] = ()
     applications: tuple[Application, ...] = ()
     statements: tuple[Statement, ...] = ()
+    public_signals: tuple[PublicSignal, ...] = ()
+    macro_signals: tuple[MacroSignal, ...] = ()  # global rows, loaded with every ledger
 
     @property
     def application(self) -> Application | None:
@@ -216,4 +308,6 @@ class Ledger:
             connections=_known(self.connections, as_of),
             applications=_known(self.applications, as_of),
             statements=_known(self.statements, as_of),
+            public_signals=_known_signals(self.public_signals, as_of),
+            macro_signals=_known_macro(self.macro_signals, as_of),
         )

@@ -6,8 +6,8 @@ version; a released version is never edited.
 
 Each item says how the borrower answers it (`kind`) and what it feeds (`feeds`):
 - "ledger": the data feeds today's metrics and checks (financials, inventory, repeat customers);
-- "intangibles": collected now for the intangibles pillar (docs/intangibles-plan.md), which is
-  still being built. The UI says so rather than implying the data is scored today.
+- "intangibles": public-signal matching and the ms-3 metrics (docs/intangibles-plan.md);
+- "systemic": the stated import mix behind the tariff stress (ms-4, docs/systemic-risk-plan.md).
 
 No government identifiers (SSN, EIN, passport) are ever requested.
 """
@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Final, Literal
 
 Kind = Literal["connector", "upload", "field", "link"]
-Feeds = Literal["ledger", "intangibles", "lender"]
+Feeds = Literal["ledger", "intangibles", "systemic", "lender"]
 
 CURRENT_VERSION: Final = "rc-1"
 MAX_CUSTOM: Final = 5
@@ -52,6 +52,8 @@ GROUPS: Final[tuple[Group, ...]] = (
     Group("reputation", "Reputation & loyalty", "What customers say and whether they come back."),
     Group("longevity", "Longevity & entity", "Who the business is and how long it has traded."),
     Group("community", "Community", "Local press, awards and associations."),
+    Group("supply", "Supply chain & tariffs",
+          "What the business imports, so known tariff actions can be stress-tested."),
 )  # fmt: skip
 
 _ITEMS: Final[tuple[Item, ...]] = (
@@ -97,6 +99,10 @@ _ITEMS: Final[tuple[Item, ...]] = (
     # community
     Item("press", "community", "Press & awards", "Links to coverage, awards or memberships.",
          "link", "intangibles"),
+    # supply chain & tariffs
+    Item("import_mix", "supply", "Imported goods",
+         "Product (HS chapter), country of origin and share of cost of goods.", "field",
+         "systemic"),
 )  # fmt: skip
 
 ITEMS: Final[dict[str, Item]] = {i.id: i for i in _ITEMS}
