@@ -76,8 +76,8 @@ def test_empty_lines_file_is_an_error(tmp_path: Path) -> None:
         shift_lines(src, tmp_path / "out.csv", end_on=date(2026, 10, 3))
 
 
-def test_default_end_on_is_a_week_before_today() -> None:
-    assert default_end_on(date(2026, 10, 10)) == date(2026, 10, 3)
+def test_default_end_on_is_today() -> None:
+    assert default_end_on(date(2026, 10, 10)) == date(2026, 10, 10)
 
 
 def test_generated_tables_follow_the_shifted_calendar(tmp_path: Path) -> None:

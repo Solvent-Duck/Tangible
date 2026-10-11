@@ -20,8 +20,9 @@ DATE_CHARS = 10  # "YYYY-MM-DD" prefix of an ISO timestamp
 
 
 def default_end_on(today: date | None = None) -> date:
-    """A week before today, so the newest data is recent but not "today"."""
-    return (today or date.today()) - timedelta(days=7)
+    """Today: the whole-week shift puts the newest data 0-6 days back. Seed on the demo day, so a
+    case rebased during the demo (as_of = now) still sees its connections as fresh."""
+    return today or date.today()
 
 
 def _date_of(stamp: str) -> date:
