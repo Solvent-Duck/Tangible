@@ -4,6 +4,8 @@ never changes what is stored (the exact value always travels beside the text).""
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from tangible import numfmt
+
 # Metric keys whose values are fractions (shown as percentages) or durations. Anything else is
 # shown as a plain number, so a new metric is never mislabelled, only left unformatted.
 _PERCENT_SUFFIXES = (
@@ -11,6 +13,7 @@ _PERCENT_SUFFIXES = (
 )  # fmt: skip
 _DAY_KEYS = {"history_days", "payables_days", "days_of_inventory", "payout_lag"}
 _MONTH_KEYS = {"cash_runway"}
+_MONEY_KEYS = {"net_revenue", "stock_value_at_cost"}  # dollars to the cent
 _SIGNED_SUFFIXES = ("_30v30", "_yoy_90d", "_slope_13w")
 
 
@@ -21,13 +24,6 @@ def _decimal(v: Any) -> Decimal | None:
         return Decimal(str(v))
     except InvalidOperation:
         return None
-
-
-def _trim(d: Decimal, places: int) -> str:
-    s = f"{d:,.{places}f}"
-    if "." in s:
-        s = s.rstrip("0").rstrip(".")
-    return "0" if s in ("-0", "") else s
 
 
 def _signed(s: str, d: Decimal) -> str:
@@ -45,15 +41,15 @@ def metric_text(v: Any, key: str) -> str | None:
         return None
     signed = key.endswith(_SIGNED_SUFFIXES)
     if key.endswith(_PERCENT_SUFFIXES):
-        text = _trim(d * 100, 1) + "%"
+        text = numfmt.pct(d)
     elif key in _DAY_KEYS:
-        text = _trim(d, 1) + (" day" if d == 1 else " days")
+        text = numfmt.num(d) + (" day" if d == 1 else " days")
     elif key in _MONTH_KEYS:
-        text = _trim(d, 1) + " mo"
-    elif key == "net_revenue":
-        text = f"{d:,.2f}"
+        text = numfmt.num(d) + " mo"
+    elif key in _MONEY_KEYS:
+        text = numfmt.usd(d)
     else:
-        text = _trim(d, 4)
+        text = numfmt.num(d)
     if signed:
         text = _signed(text, d)
     return text

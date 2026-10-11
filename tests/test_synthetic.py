@@ -361,7 +361,9 @@ def test_trade_suppliers_pay_late_about_one_in_eight(tmp_path: Path) -> None:
 # with seed 7. These were taken before profiles existed, so they pin the original output: if one
 # changes, the default merchant's data changed and every backtest number with it.
 GOLDEN_CLEAN = "ea28fa72e9e03f7209e97da52feb98f96f8b8fa65ff96e715adaa16846551986"
-GOLDEN_ALL_PLANTS = "187ac428880694e9a12addcb6a516849253358b8d8c26d186e8f70b44c2af7a8"
+# Re-pinned when the plant descriptions in planted.json changed from GBP to dollars; every data
+# file was byte-identical to the previous golden (187ac428...).
+GOLDEN_ALL_PLANTS = "96d9245386373fc4ec949333c2030bf91a452fdeb0bdbe07a2fec73f4f163b51"
 
 
 def digest(out: Path) -> str:

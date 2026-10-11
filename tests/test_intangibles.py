@@ -366,7 +366,7 @@ def test_uplift_lifts_one_notch_and_records_the_values_seen() -> None:
     texts = [x["rule"] for x in uplift_rules(r)]
     assert (
         "uplift C→B via loyalty: repeat_customer_share 0.41 >= 0.35; "
-        "loyalty_mention_share 0.2 >= 0.15"
+        "loyalty_mention_share 0.20 >= 0.15"
     ) in texts
     outcomes = {x.get("route"): x["outcome"] for x in uplift_rules(r) if x["op"] == "all"}
     assert outcomes == {"reputation": "disabled", "loyalty": "pass", "stock": "not_evaluated"}
@@ -417,7 +417,7 @@ def test_missing_metric_is_not_evaluated_and_failures_say_why() -> None:
                           "days_of_inventory": D("200")}, [])  # fmt: skip
     rules = {x.get("route"): x for x in uplift_rules(r)}
     assert rules["loyalty"]["outcome"] == "fail"
-    assert "repeat_customer_share 0.2 < 0.35" in rules["loyalty"]["saw"]
+    assert "repeat_customer_share 0.20 < 0.35" in rules["loyalty"]["saw"]
     assert "days_of_inventory 200 > 120" in rules["stock"]["saw"]
     assert rules[None]["rule"] == "uplift: no route fired; band stays C"
 

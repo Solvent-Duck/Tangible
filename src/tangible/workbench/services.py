@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from tangible import numfmt
 from tangible.agent.llm import LoggedClient, ModelClient
 from tangible.agent.loop import approve_plan as _approve_plan
 from tangible.agent.loop import investigate as _investigate
@@ -94,6 +95,12 @@ class Invalid(WorkbenchError):
 
 
 # ---------------------------------------------------------------- helpers
+
+
+def _cost_text(cost: object) -> str:
+    """Model cost to the cent; a cost too small to show at two decimals is "<$0.01", not "$0.00"."""
+    d = Decimal(str(cost))
+    return "<$0.01" if 0 < d < Decimal("0.005") else numfmt.usd(d)
 
 
 def stuck_after_min() -> float:
@@ -446,7 +453,7 @@ def get_case_detail(
                 "model_calls": usage[0],
                 "cost_usd": usage[1],
                 "priced": priced,
-                "cost_text": UNPRICED_NOTE if usage[0] and not priced else f"${usage[1]}",
+                "cost_text": UNPRICED_NOTE if usage[0] and not priced else _cost_text(usage[1]),
             }
         )
         stop = conn.execute(

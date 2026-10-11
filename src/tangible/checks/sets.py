@@ -49,6 +49,26 @@ CHECK_SETS["cs-6"] = (
 )
 
 
+# cs-7: cs-6 with every check whose summary carries money, a share or a ratio replaced by its
+# version that writes dollars ("$1,234.56") and two decimals ("87.31%"). Same comparisons,
+# thresholds and facts; only the wording of the summary changes.
+_CS7_TEXT: dict[tuple[str, int], int] = {
+    ("payouts_vs_deposits", 1): 2,
+    ("books_vs_processor", 2): 3,
+    ("orders_vs_payouts", 1): 2,
+    ("payables_vs_bank", 1): 2,
+    ("stated_vs_observed", 1): 2,
+    ("time_gaps", 2): 3,
+    ("partial_coverage", 1): 2,
+    ("round_number_pattern", 1): 2,
+    ("self_transfers_as_revenue", 1): 2,
+    ("unexplained_recurring_debit", 1): 2,
+    ("document_mismatch", 1): 2,
+    ("review_volume_vs_orders", 1): 2,
+}
+CHECK_SETS["cs-7"] = tuple((k, _CS7_TEXT.get((k, v), v)) for k, v in CHECK_SETS["cs-6"])
+
+
 def check_set(set_id: str) -> tuple[tuple[str, int], ...]:
     members = CHECK_SETS[set_id]
     for key, version in members:

@@ -61,7 +61,7 @@ _TABLES: dict[str, tuple[tuple[str, ...], Callable[[Any], Values]]] = {
     "orders": (
         ("source_ref", "channel", "gross", "discounts", "tax", "currency", "customer_ref",
          "occurred_at", "observed_at"),
-        lambda r: (r.source_ref, None, r.gross, r.discounts, 0, "GBP", r.customer_ref,
+        lambda r: (r.source_ref, None, r.gross, r.discounts, 0, "USD", r.customer_ref,
                    r.occurred_at, r.observed_at),
     ),
     "refund": (

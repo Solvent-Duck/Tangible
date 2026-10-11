@@ -262,7 +262,7 @@ function ProfileStep({
     (profile?.import_mix ?? []).map((x) => ({
       hs_chapter: x.hs_chapter,
       country: x.country,
-      share: String(Math.round(Number(x.share_of_cogs) * 1000) / 10),
+      share: String(Math.round(Number(x.share_of_cogs) * 10000) / 100),
     })),
   );
   const importMix = !askImports
@@ -328,7 +328,7 @@ function ProfileStep({
             <Input id="address" value={f.address} onChange={set("address")} placeholder="212 Main St, Portland" />
           </Field>
           <Field label="Revenue, last 90 days" hint="your estimate" htmlFor="rev">
-            <Input id="rev" inputMode="decimal" value={f.stated_revenue_90d} onChange={set("stated_revenue_90d")} placeholder="$120,000" />
+            <Input id="rev" inputMode="decimal" value={f.stated_revenue_90d} onChange={set("stated_revenue_90d")} placeholder="$120,000.00" />
           </Field>
           {askImports && (
             <ImportsEditor rows={imports} setRows={setImports} none={noImports} setNone={setNoImports} />

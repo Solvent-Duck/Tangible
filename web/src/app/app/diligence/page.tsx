@@ -15,7 +15,7 @@ import { useApi } from "@/lib/api";
 import { CASE_STATUS } from "@/lib/labels";
 import { useMembership } from "@/lib/session";
 import type { BookExposure, CaseRow } from "@/lib/types";
-import { cn, date, money } from "@/lib/utils";
+import { cn, date, money, pct } from "@/lib/utils";
 
 const FILTERS = [
   { id: "active", label: "Active", match: (s: string) => ["open", "planning", "investigating", "review"].includes(s) },
@@ -185,7 +185,7 @@ export default function CasesPage() {
                     <td className="px-3 py-2.5 text-muted">{a.effective_on ?? "—"}</td>
                     <td className="tabular px-3 py-2.5 text-right">{a.n}</td>
                     <td className="tabular px-3 py-2.5 text-right">
-                      {a.share != null ? `${Math.round(Number(a.share) * 100)}%` : "—"}
+                      {a.share != null ? pct(a.share) : "—"}
                     </td>
                   </tr>
                 ))}

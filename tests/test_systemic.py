@@ -191,7 +191,26 @@ def test_stressed_limit_only_reduces_and_never_touches_the_band(
     stress = [x for x in r.rules_fired if x["step"] == "stress"]
     assert outcome in {x["outcome"] for x in stress}
     if outcome == "reduced":
-        assert stress[-1]["rule"].startswith("stressed limit 40000.00→")
+        assert stress[-1]["rule"].startswith("stressed limit $40,000.00→")
+
+
+def test_060_writes_rules_in_dollars_and_050_frozen_rules_are_unchanged() -> None:
+    # Same decision under both; only 0.6.0's wording differs (report block). Assessments frozen
+    # under 0.5.0 must replay to byte-identical rules.
+    m = _base() | {"stressed_runway": D(2)}
+    new = evaluate(POLICY, m, [])
+    old = evaluate(load_policy(POLICIES / "default-0.5.0.yaml"), m, [])
+    assert (new.band, new.limit) == (old.band, old.limit) == ("A", D("20000.00"))
+    rule = {r.policy_version: {x["step"]: x for x in r.rules_fired} for r in (new, old)}
+    assert rule["0.5.0"]["stress"]["rule"] == (
+        "stressed limit 40000.00→20000.00 (x0.5): stressed_runway 2 <= 3"
+    )
+    assert rule["0.6.0"]["stress"]["rule"] == (
+        "stressed limit $40,000.00→$20,000.00 (x0.50): stressed_runway 2 <= 3"
+    )
+    assert rule["0.5.0"]["limit"]["rule"] == "limit: 0.4 x net_revenue, max 250000"
+    assert rule["0.6.0"]["limit"]["rule"] == "limit: 0.40 x net_revenue, max $250,000.00"
+    assert rule["0.6.0"]["limit"]["saw"] == "$100,000.00"
 
 
 def test_stress_schema_is_strict() -> None:

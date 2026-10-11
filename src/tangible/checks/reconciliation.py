@@ -6,11 +6,13 @@ needs is absent: missing data is the completeness checks' job. Thresholds are mo
 changing one means a new check version, never an edit to a released one.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Final
 
+from tangible import numfmt
 from tangible.checks.calendar_uk import is_business_day
 from tangible.checks.registry import FindingDraft, Severity, check
 from tangible.ledger.types import BankTxn, InventorySnapshot, Invoice, Ledger, Order, Payout, Refund
@@ -39,7 +41,7 @@ SETTLE_WAIT_FLOOR_BDAYS: Final = 12
 
 # orders_vs_payouts v1
 # v1 heuristic: orders carry no channel in the synthetic data, so an order whose net is under
-# this is treated as a card order (the synthetic generator sends GBP 500+ orders to invoices).
+# this is treated as a card order (the synthetic generator sends $500+ orders to invoices).
 CARD_ORDER_MAX_NET: Final = Decimal(500)
 ORDERS_GAP_REVIEW: Final = Decimal("0.05")
 # A payout expected on day E is settled up to 4 days later (2 business days over a weekend),
@@ -84,6 +86,20 @@ def _pct(x: Decimal) -> str:
     return f"{(x * 100):.1f}%"
 
 
+@dataclass(frozen=True)
+class _Fmt:
+    """How a check version writes money and shares into its summary. Released versions keep
+    `LEGACY`: replay compares the summary of a frozen finding, so their text never changes.
+    The cs-7 versions write `USD` (dollars to the cent, shares to two decimals)."""
+
+    money: Callable[[Decimal], str]
+    pct: Callable[[Decimal], str]
+
+
+LEGACY: Final = _Fmt(_gbp, _pct)
+USD: Final = _Fmt(numfmt.usd, numfmt.pct)
+
+
 def _refs(rows: Iterable[tuple[Decimal, str, object]]) -> tuple[str, ...]:
     """Evidence refs for (weight, tiebreak, row-with-evidence) triples, most material first."""
     out: list[str] = []
@@ -114,10 +130,11 @@ def _finding(
     summary: str,
     refs: tuple[str, ...],
     facts: dict[str, str],
+    version: int = 1,
 ) -> FindingDraft:
     return FindingDraft(
         check_key=key,
-        check_version=1,
+        check_version=version,
         severity=severity,
         pillar=PILLAR,
         summary=summary,
@@ -164,6 +181,18 @@ def _match_payouts(
 
 @check("payouts_vs_deposits", 1)
 def payouts_vs_deposits(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    return _payouts_vs_deposits_body(ledger, as_of, LEGACY, 1)
+
+
+@check("payouts_vs_deposits", 2)
+def payouts_vs_deposits_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check, written in dollars with shares to two decimals (check set cs-7)."""
+    return _payouts_vs_deposits_body(ledger, as_of, USD, 2)
+
+
+def _payouts_vs_deposits_body(
+    ledger: Ledger, as_of: datetime, fmt: _Fmt, version: int
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     start, end = _window(as_of)
     # Only payouts old enough that their deposit could already have posted and been seen.
@@ -184,9 +213,9 @@ def payouts_vs_deposits(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
         return []
     severity: Severity = "hold" if share < MATCHED_HOLD_BELOW else "review"
     summary = (
-        f"Only {_pct(share)} of settled payout value ({_gbp(total - missing)} of {_gbp(total)}) "
-        f"has a matching bank deposit within {MATCH_DAYS} days and 1%; {len(unmatched)} of "
-        f"{len(payouts)} payouts worth {_gbp(missing)} have no deposit."
+        f"Only {fmt.pct(share)} of settled payout value ({fmt.money(total - missing)} of "
+        f"{fmt.money(total)}) has a matching bank deposit within {MATCH_DAYS} days and 1%; "
+        f"{len(unmatched)} of {len(payouts)} payouts worth {fmt.money(missing)} have no deposit."
     )
     return [
         _finding(
@@ -203,6 +232,7 @@ def payouts_vs_deposits(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
                 "payouts": str(len(payouts)),
                 "unmatched_payouts": str(len(unmatched)),
             },
+            version,
         )
     ]
 
@@ -329,6 +359,18 @@ def books_vs_processor_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]
     Months not yet judged are listed in the ``skipped_months`` fact of the finding, when there
     is one. Attribution by sales day, thresholds, severities and the worst-month rule are v1's.
     """
+    return _books_vs_processor_body(ledger, as_of, LEGACY, 2)
+
+
+@check("books_vs_processor", 3)
+def books_vs_processor_v3(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v2's check, written in dollars with shares to two decimals (check set cs-7)."""
+    return _books_vs_processor_body(ledger, as_of, USD, 3)
+
+
+def _books_vs_processor_body(
+    ledger: Ledger, as_of: datetime, fmt: _Fmt, version: int
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     start, end = _window(as_of)
     today = as_of.date()
@@ -385,8 +427,8 @@ def books_vs_processor_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]
     severity: Severity = "hold" if gap > BOOKS_GAP_HOLD else "review"
     direction = "above" if processor > books else "below"
     summary = (
-        f"In {first:%B %Y} the books show {_gbp(books)} of net revenue but the processor and "
-        f"invoice records show {_gbp(processor)} ({_pct(gap)} {direction} the books)."
+        f"In {first:%B %Y} the books show {fmt.money(books)} of net revenue but the processor and "
+        f"invoice records show {fmt.money(processor)} ({fmt.pct(gap)} {direction} the books)."
     )
     weighted: list[tuple[Decimal, str, object]] = [
         (abs(p.amount + p.fees), p.source_ref, p) for p in m_payouts
@@ -394,7 +436,7 @@ def books_vs_processor_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]
     return [
         FindingDraft(
             check_key="books_vs_processor",
-            check_version=2,
+            check_version=version,
             severity=severity,
             pillar=PILLAR,
             summary=summary,
@@ -418,6 +460,18 @@ def books_vs_processor_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]
 
 @check("orders_vs_payouts", 1)
 def orders_vs_payouts(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    return _orders_vs_payouts_body(ledger, as_of, LEGACY, 1)
+
+
+@check("orders_vs_payouts", 2)
+def orders_vs_payouts_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check, written in dollars with shares to two decimals (check set cs-7)."""
+    return _orders_vs_payouts_body(ledger, as_of, USD, 2)
+
+
+def _orders_vs_payouts_body(
+    ledger: Ledger, as_of: datetime, fmt: _Fmt, version: int
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     start, end = _window(as_of)
     last_expected = end - timedelta(days=PAYOUT_LAG_DAYS)
@@ -450,9 +504,9 @@ def orders_vs_payouts(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
         return []
     direction = "more" if paid > card_net else "less"
     summary = (
-        f"Card-sized orders from {first_e} to {last_e} net {_gbp(card_net)}, but processor "
-        f"payouts plus fees for the same days total {_gbp(paid)}: {_pct(gap)} {direction} than "
-        f"the orders explain."
+        f"Card-sized orders from {first_e} to {last_e} net {fmt.money(card_net)}, but processor "
+        f"payouts plus fees for the same days total {fmt.money(paid)}: {fmt.pct(gap)} "
+        f"{direction} than the orders explain."
     )
     return [
         _finding(
@@ -467,6 +521,7 @@ def orders_vs_payouts(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
                 "threshold_review": str(ORDERS_GAP_REVIEW),
                 "card_order_max_net": str(CARD_ORDER_MAX_NET),
             },
+            version,
         )
     ]
 
@@ -552,6 +607,18 @@ def _same_party(a: str | None, b: str | None) -> bool:
 
 @check("payables_vs_bank", 1)
 def payables_vs_bank(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    return _payables_vs_bank_body(ledger, as_of, LEGACY, 1)
+
+
+@check("payables_vs_bank", 2)
+def payables_vs_bank_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check, written in dollars with shares to two decimals (check set cs-7)."""
+    return _payables_vs_bank_body(ledger, as_of, USD, 2)
+
+
+def _payables_vs_bank_body(
+    ledger: Ledger, as_of: datetime, fmt: _Fmt, version: int
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     start, end = _window(as_of)
     paid = [
@@ -592,7 +659,7 @@ def payables_vs_bank(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     severity: Severity = "review" if total >= PAYABLE_REVIEW_MISSING else "info"
     summary = (
         f"{len(missing)} of {len(paid)} payables marked paid have no matching bank payment to "
-        f"the same supplier within {MATCH_DAYS} days and 1%, worth {_gbp(total)} in total."
+        f"the same supplier within {MATCH_DAYS} days and 1%, worth {fmt.money(total)} in total."
     )
     return [
         _finding(
@@ -606,6 +673,7 @@ def payables_vs_bank(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
                 "paid_count": str(len(paid)),
                 "threshold_review": str(PAYABLE_REVIEW_MISSING),
             },
+            version,
         )
     ]
 
@@ -615,6 +683,18 @@ def payables_vs_bank(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
 
 @check("stated_vs_observed", 1)
 def stated_vs_observed(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    return _stated_vs_observed_body(ledger, as_of, LEGACY, 1)
+
+
+@check("stated_vs_observed", 2)
+def stated_vs_observed_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check, written in dollars with shares to two decimals (check set cs-7)."""
+    return _stated_vs_observed_body(ledger, as_of, USD, 2)
+
+
+def _stated_vs_observed_body(
+    ledger: Ledger, as_of: datetime, fmt: _Fmt, version: int
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     app = k.application
     if app is None or app.stated_revenue_90d is None:
@@ -628,7 +708,7 @@ def stated_vs_observed(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
         over = (stated - observed) / observed
         if over <= STATED_OVER_REVIEW:
             return []
-        over_text = f"{_pct(over)} higher"
+        over_text = f"{fmt.pct(over)} higher"
         over_fact = _q4(over)
     else:
         if stated <= 0:
@@ -636,8 +716,8 @@ def stated_vs_observed(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
         over_text = "with no observed revenue to compare"
         over_fact = "n/a"
     summary = (
-        f"The application states {_gbp(stated)} of revenue for 90 days, but connected data shows "
-        f"{_gbp(observed)} net from {start} to {end}: stated is {over_text}."
+        f"The application states {fmt.money(stated)} of revenue for 90 days, but connected data "
+        f"shows {fmt.money(observed)} net from {start} to {end}: stated is {over_text}."
     )
     weighted: list[tuple[Decimal, str, object]] = [(Decimal("Infinity"), app.source_ref, app)] + [
         (_order_net(o), o.source_ref, o) for o in orders
@@ -654,5 +734,6 @@ def stated_vs_observed(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
                 "stated_over_observed": over_fact,
                 "threshold_review": str(STATED_OVER_REVIEW),
             },
+            version,
         )
     ]

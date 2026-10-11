@@ -5,10 +5,12 @@ uses only signals whose entity match counts. No signal, no finding: absence of a
 evidence of anything. Thresholds are module constants; a change is a new check version.
 """
 
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from typing import Final
 
+from tangible import numfmt
 from tangible.checks.registry import FindingDraft, check
 from tangible.intangibles.matching import address_similarity, phone_digits
 from tangible.ledger.types import Ledger
@@ -66,6 +68,22 @@ def review_volume_vs_orders(ledger: Ledger, as_of: datetime) -> list[FindingDraf
     Reviews >= 50 and reviews / orders known up to as_of > 0.25 (review). A common sign of bought
     reviews. Nothing fires without orders (that is the completeness checks' job).
     """
+    return _review_volume_vs_orders(ledger, as_of, 1, _q4, str)
+
+
+@check("review_volume_vs_orders", 2)
+def review_volume_vs_orders_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check with the ratio to two decimals (check set cs-7)."""
+    return _review_volume_vs_orders(ledger, as_of, 2, numfmt.num, numfmt.num)
+
+
+def _review_volume_vs_orders(
+    ledger: Ledger,
+    as_of: datetime,
+    version: int,
+    ratio_text: Callable[[Decimal], str],
+    limit_text: Callable[[Decimal], str],
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     pairs = rating_inputs(k)
     reviews = sum((n for _, n in pairs), Decimal(0))
@@ -78,11 +96,11 @@ def review_volume_vs_orders(ledger: Ledger, as_of: datetime) -> list[FindingDraf
     return [
         FindingDraft(
             "review_volume_vs_orders",
-            1,
+            version,
             "review",
             PILLAR,
             f"Matched listings show {reviews:f} reviews against {orders} orders in the ledger "
-            f"({_q4(ratio)} reviews per order, above {REVIEWS_PER_ORDER_MAX}).",
+            f"({ratio_text(ratio)} reviews per order, above {limit_text(REVIEWS_PER_ORDER_MAX)}).",
             facts={
                 "reviews": f"{reviews:f}",
                 "orders": str(orders),

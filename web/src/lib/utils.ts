@@ -22,17 +22,47 @@ export function humanize(v: string | null | undefined): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** "$75,000" from "75000.00"; "—" when absent. */
-export function money(v: string | number | null | undefined, cents = false): string {
-  if (v === null || v === undefined || v === "") return "—";
+// Numbers on screen: dollars to the cent, everything else to two decimals (a whole number stays
+// whole). Same rules as the API's tangible.numfmt, so a figure reads the same everywhere.
+
+function toNumber(v: string | number | null | undefined): number | null {
+  if (v === null || v === undefined || v === "") return null;
   const n = typeof v === "number" ? v : Number(v);
-  if (!Number.isFinite(n)) return String(v);
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: cents ? 2 : 0,
-    minimumFractionDigits: cents ? 2 : 0,
-  });
+  return Number.isFinite(n) ? n : null;
+}
+
+const TWO = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+
+/** "$75,000.00" from "75000"; "—" when absent. */
+export function money(v: string | number | null | undefined): string {
+  const n = toNumber(v);
+  if (n === null) return v === null || v === undefined || v === "" ? "—" : String(v);
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", ...TWO });
+}
+
+/** "0.41" from "0.41237", "1,234.50" from 1234.5, "183" from "183"; "—" when absent. */
+export function num(v: string | number | null | undefined): string {
+  const n = toNumber(v);
+  if (n === null) return v === null || v === undefined || v === "" ? "—" : String(v);
+  if (Number.isInteger(n)) return n.toLocaleString("en-US");
+  const s = n.toLocaleString("en-US", TWO);
+  return s === "-0.00" ? "0.00" : s;
+}
+
+/** A share as a percent to two decimals: "87.31%" from 0.873149, "25%" from 0.25. */
+export function pct(v: string | number | null | undefined): string {
+  const n = toNumber(v);
+  if (n === null) return v === null || v === undefined || v === "" ? "—" : String(v);
+  const p = n * 100;
+  if (p > 0 && p < 0.005) return "<0.01%";
+  return `${num(Math.round(p * 100) / 100)}%`;
+}
+
+/** `num` for a value that may or may not be a number (policy "saw" and "threshold" fields). */
+export function numeric(v: unknown): string {
+  if (typeof v === "number") return num(v);
+  if (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v.trim())) return num(v);
+  return v === undefined || v === null ? "–" : String(v);
 }
 
 export function date(v: string | null | undefined, withTime = false): string {

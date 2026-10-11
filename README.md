@@ -52,7 +52,7 @@ approve plan ─► Strands Graph "intangibles_search" (parallel)
 every agent:  ModelClientModel  → agent/llm.py (Bedrock Converse, prompt caching, cost per call)
               TangibleGuardrails → Strands hooks enforcing the invariants below
                          ▼
-ms-4 metrics (pure, versioned) ─► policy 0.5.0: knockout → bands → uplift (≤ 1 notch) → review cap → limit → stress
+ms-4 metrics (pure, versioned) ─► policy 0.6.0: knockout → bands → uplift (≤ 1 notch) → review cap → limit → stress
 ```
 
 - **Custom model provider.** `strands_engine/model.py` is a Strands `Model` over our own `ModelClient`, so every model call still goes through `agent/llm.py`: one `model_call` row with its cost per step, Bedrock prompt caching, and scripted clients that drive Strands offline in tests.
@@ -70,7 +70,7 @@ Env for a live run: `TANGIBLE_MODEL_BACKEND=bedrock TANGIBLE_SIGNAL_PROVIDER=fix
 
 ## Systemic exposure (tariffs)
 
-Tangible does not forecast tariffs. It loads enacted or announced actions, dated by publication (`tangible-macro load`; the demo set is fictional), and reads each borrower's stated import mix. The ms-4 metrics then compute the margin and cash flow left after the new duty, assuming none of it is passed on. Policy 0.5.0 may only **reduce the limit**, never the band, for example "stressed limit 114,182.91→85,637.18 (x0.75): stressed_flow_margin −0.018 ≤ 0". The cases list shows how much of the book each action touches. Plan and v1 notes: [docs/systemic-risk-plan.md](docs/systemic-risk-plan.md).
+Tangible does not forecast tariffs. It loads enacted or announced actions, dated by publication (`tangible-macro load`; the demo set is fictional), and reads each borrower's stated import mix. The ms-4 metrics then compute the margin and cash flow left after the new duty, assuming none of it is passed on. The policy (0.5.0 onwards) may only **reduce the limit**, never the band, for example "stressed limit $114,182.91→$85,637.18 (x0.75): stressed_flow_margin -0.02 <= 0". The cases list shows how much of the book each action touches. Plan and v1 notes: [docs/systemic-risk-plan.md](docs/systemic-risk-plan.md).
 
 ## Layout
 
@@ -80,11 +80,11 @@ Tangible does not forecast tariffs. It loads enacted or announced actions, dated
 | `src/tangible/ledger/` | Ledger row types and `known_as_of`, the single place the `observed_at` time rule lives. |
 | `src/tangible/ingest/`, `src/tangible/datasets/` | Load data into the ledger (`tangible-ingest`); UCI Online Retail loader and a synthetic generator with planted problems. |
 | `src/tangible/metrics/` | 39 versioned pure metrics (health, momentum, intangibles, systemic), latest set `ms-4`. |
-| `src/tangible/checks/` | 22 versioned integrity checks (reconciliation, completeness, tampering, documents, public listings, tariffs), latest set `cs-6` (`books_vs_processor` v2 waits for settlement); they emit findings. |
+| `src/tangible/checks/` | 22 versioned integrity checks (reconciliation, completeness, tampering, documents, public listings, tariffs), latest set `cs-7` (`books_vs_processor` v2 waits for settlement; cs-7 writes findings in dollars and to two decimals); they emit findings. |
 | `src/tangible/policy/` | Policy loader (version + hash), typed schema, evaluator (band and limit) and review state. |
 | `src/tangible/assessment/` | Baseline, freeze and replay of an assessment (`tangible-replay`). |
 | `src/tangible/agent/strands_engine/` | The Strands Agents engine: model provider, guardrail hooks, the search-team Graph. |
-| `src/tangible/agent/` | Investigation loop: plan, analyst approval, then a step- and cost-budgeted tool run. Eight logged tools, an analysis sandbox, a number verifier (the agent is told which numbers did not verify and can record a correction that replaces the earlier finding) and versioned prompts (`plan@v3`, `investigate@v4`). `llm.py` is the only vendor-aware module (Bedrock Converse). |
+| `src/tangible/agent/` | Investigation loop: plan, analyst approval, then a step- and cost-budgeted tool run. Eight logged tools, an analysis sandbox, a number verifier (the agent is told which numbers did not verify and can record a correction that replaces the earlier finding) and versioned prompts (`plan@v3`, `investigate@v5`). `llm.py` is the only vendor-aware module (Bedrock Converse). |
 | `src/tangible/documents/`, `src/tangible/web/` | Uploaded PDF statements (text, file traits, model reader) and allow-listed web lookups. Both are untrusted data. |
 | `src/tangible/evidence/`, `src/tangible/secrets/` | Raw evidence store (local directory, or S3 with Object Lock and SSE-KMS) and connector tokens (environment or Secrets Manager). |
 | `src/tangible/connectors/` | Rutter and Plaid adapters (`tangible-pull`) and sandbox seeding (`tangible-sandbox`). |
@@ -93,7 +93,7 @@ Tangible does not forecast tariffs. It loads enacted or announced actions, dated
 | `src/tangible/onboarding/`, `src/tangible/notify/` | Lender invites, the versioned request catalog, the business's onboarding, and the email outbox. |
 | `web/` | The web app (Next.js): landing page, lender dashboard and invite composer, business onboarding, due-diligence workspace. |
 | `src/tangible/demo/` | Demo tenant seed (`tangible-demo seed`, `make demo`) and statement PDFs from a borrower's ledger (`tangible-demo statements`). |
-| `policies/default.yaml` | Default lender policy 0.5.0 (starting-guess thresholds; agent holds block only once an analyst accepts them; 0.4.0 added the intangibles uplift, 0.5.0 the stressed limit). Older versions are kept beside it (`default-0.2.2.yaml` … `default-0.4.0.yaml`) so replay can use the policy an assessment was frozen under. |
+| `policies/default.yaml` | Default lender policy 0.6.0 (starting-guess thresholds; agent holds block only once an analyst accepts them; 0.4.0 added the intangibles uplift, 0.5.0 the stressed limit, 0.6.0 dollars and two decimals in findings and rules). Older versions are kept beside it (`default-0.2.2.yaml` … `default-0.5.0.yaml`) so replay can use the policy an assessment was frozen under. |
 
 ## Status
 
@@ -105,6 +105,7 @@ Everything in the layout above is built and covered by `make check`. Not done ye
 
 ## Notes
 
+- Money is US dollars throughout, shown to the cent; other figures are shown to two decimals (`tangible.numfmt`, and `money`/`num`/`pct` in `web/src/lib/utils.ts`). Rounding is display only: checks, metrics and policy compare exact values. The seed's order lines come from a UK dataset; the amounts are used as they are and labelled USD.
 - Ledger table `order` is named `orders` (reserved word). Every ledger table carries `source_ref` so a revised record is a new row, not an overwrite.
 - App code must run as role `tangible_app` and `SET app.tenant_id` per connection; RLS is forced on every tenant table.
 - Borrower data never goes in the repo (`data/` and `*.csv` are ignored). Two tests skip without the local UCI dataset.

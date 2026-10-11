@@ -55,7 +55,7 @@ and connections seeded days earlier would read as stale.
 | Borrower | State | The story |
 | --- | --- | --- |
 | Harbour & Pine Homeware Ltd | open | Clean business. Kept for the live agent run and the forged statement. |
-| Marlow Lane Interiors Ltd | signed, band C | Daily £450 debits to Fernbank Funding with no invoice: an undisclosed lender. The agent's web lookups found an £8,450 county court judgment and a registered charge from the same lender (verified agent holds, not blocking until accepted). |
+| Marlow Lane Interiors Ltd | signed, band C | Daily $450.00 debits to Fernbank Funding with no invoice: an undisclosed lender. The agent's web lookups found an $8,450.00 county court judgment and a registered charge from the same lender (verified agent holds, not blocking until accepted). |
 | Kestrel Gift Co Ltd | signed, no band | Payouts don't reach the bank: a hidden reserve. The rule hold blocks a decision. |
 | Brightwell Crafts Ltd | review | Owner money counted as sales, payouts above orders, stale SumUp feed. A review page carries an injection attempt; the agent ignored it and recorded it as an info finding. The registry also shows a director change: a good send-back question ("check the companies registry for officer changes"). |
 | Oakden Trading Ltd | review | Amazon income from an account it never connected; bank access revoked 3 days before the case date (both agent holds, verified). |
@@ -112,7 +112,7 @@ The onboarding pipeline (dashboard): Cedar & Sage Florist (invited), Bluebird Cy
 8. **Lender view.** Switch to **len**. The lender sees signed cases only and has no actions.
 8b. **Systemic exposure.** On Lakeside's case (or Northgate's), **Systemic exposure** lists the
    stated imports against the tariff action known at the case date; the cases list shows **Book
-   exposure** across the portfolio. Policy 0.5.0 only ever lowers the limit, never the band.
+   exposure** across the portfolio. The policy only ever lowers the limit, never the band.
 9. **Backtest.** Open the Backtest tab: 13 of 13 planted problems caught, loss by band, all 20
    assessments replay, and no data leaks across the decision date. Say clearly that it's
    synthetic: the labels are planted problems, not repayment outcomes.
@@ -139,7 +139,7 @@ The onboarding pipeline (dashboard): Cedar & Sage Florist (invited), Bluebird Cy
 
 - The backtest is not evidence of predictive power. It runs on a synthetic cohort.
 - Web results are fixtures, not live lookups.
-- Bands and limits come from a starting-guess policy (0.5.0), not a calibrated one.
+- Bands and limits come from a starting-guess policy (0.6.0), not a calibrated one.
 
 
 ## Hosted demo

@@ -9,6 +9,8 @@ Mapping choices (the source has no observation times or order links on credit no
   so order_ref is the credit note's own invoice number.
 - observed_at = occurred_at + `observed_lag`. Pass a lag to model late-arriving data.
 - Rows with non-positive price, bad-debt 'A' invoices, and fee/test stock codes are dropped.
+- Prices are used as they are. The source prices are GBP; Tangible's ledgers and demo are in US
+  dollars, so the rows are labelled USD (the Order default). The amounts are not converted.
 - 2010-12 appears in both worksheets; an invoice is taken from the first sheet that has it.
 """
 

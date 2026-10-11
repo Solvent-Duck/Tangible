@@ -141,12 +141,12 @@ function HeroVisual() {
         <div className="mt-5 space-y-2.5">
           <MockFinding
             tone="review"
-            title="Payouts of $18,420 never reached the business account"
+            title="Payouts of $18,420.00 never reached the business account"
             meta="payouts_vs_deposits v1 · verified"
           />
           <MockFinding
             tone="review"
-            title="Recurring $1,250 debit to an undisclosed lender since June"
+            title="Recurring $1,250.00 debit to an undisclosed lender since June"
             meta="unexplained_recurring_debit v1 · verified"
           />
           <MockFinding tone="info" title="Repeat customers: 41% of orders over 90 days" meta="repeat_customer_share v1" />
@@ -159,7 +159,7 @@ function HeroVisual() {
         <p className="text-[11.5px] text-faint">Policy 0.5.0 · capped at C by open reviews</p>
         <p className="flex items-center gap-2 text-[14px] font-semibold">
           <span className="grid size-6 place-items-center rounded-md bg-brand text-[12px] text-brand-fg">C</span>
-          Suggested limit $60,000
+          Suggested limit $60,000.00
         </p>
       </div>
     </div>

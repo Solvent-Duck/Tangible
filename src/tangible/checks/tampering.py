@@ -2,11 +2,12 @@
 
 import calendar
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Final
 
+from tangible import numfmt
 from tangible.checks.registry import FindingDraft, check
 from tangible.ledger.evidence import EvidenceRef
 from tangible.ledger.types import BankTxn, Invoice, Ledger, Order
@@ -24,6 +25,12 @@ RECURRING_MIN_DEBITS: Final = 10
 RECURRING_MIN_SAME_AMOUNT_SHARE: Final = Decimal("0.80")
 LENDER_WORDS: Final = ("CAPITAL", "LENDING", "LOAN", "FINANCE", "FUNDING", "ADVANCE")
 MAX_EVIDENCE: Final = 50
+
+Text = Callable[[Decimal], str]
+# How v1 wrote figures (frozen: replay compares summaries). The cs-7 versions use numfmt.
+_RAW: Final[Text] = str
+_PCT1: Final[Text] = lambda x: f"{x:.1%}"  # noqa: E731
+_PCT0: Final[Text] = lambda x: f"{x:.0%}"  # noqa: E731
 
 
 def _refs(evidence: Iterable[EvidenceRef | None]) -> tuple[str, ...]:
@@ -133,6 +140,18 @@ def backdated_edits(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
 @check("round_number_pattern", 1)
 def round_number_pattern(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     """More than 20% of the last 90 days of bank inflows (and at least 5) are multiples of 100."""
+    return _round_number_pattern(ledger, as_of, 1, _RAW, _PCT1, _PCT0)
+
+
+@check("round_number_pattern", 2)
+def round_number_pattern_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check, written in dollars with shares to two decimals (check set cs-7)."""
+    return _round_number_pattern(ledger, as_of, 2, numfmt.usd, numfmt.pct, numfmt.pct)
+
+
+def _round_number_pattern(
+    ledger: Ledger, as_of: datetime, version: int, money: Text, share_text: Text, limit_text: Text
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     inflows = _inflows_90d(k, as_of)
     rnd = [t for t in inflows if t.amount > 0 and t.amount % ROUND_STEP == 0]
@@ -145,13 +164,13 @@ def round_number_pattern(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     return [
         FindingDraft(
             check_key="round_number_pattern",
-            check_version=1,
+            check_version=version,
             severity="info",
             pillar="integrity",
             summary=(
                 f"{len(rnd)} of {len(inflows)} bank inflows in the last {WINDOW_DAYS} days "
-                f"({share:.1%}) are exact multiples of {ROUND_STEP}; the limit is "
-                f"{ROUND_MAX_SHARE:.0%}."
+                f"({share_text(share)}) are exact multiples of {money(ROUND_STEP)}; the limit is "
+                f"{limit_text(ROUND_MAX_SHARE)}."
             ),
             evidence_refs=_refs(t.evidence for t in rnd),
             facts={
@@ -171,6 +190,18 @@ def self_transfers_as_revenue(ledger: Ledger, as_of: datetime) -> list[FindingDr
     inflows. Identities: the application's owner and own-account names (substring match), plus,
     always, any counterparty that received an outflow described as drawings, dividend or
     director payment anywhere in the known data (exact match)."""
+    return _self_transfers_as_revenue(ledger, as_of, 1, _RAW, _PCT1, _PCT0)
+
+
+@check("self_transfers_as_revenue", 2)
+def self_transfers_as_revenue_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check, written in dollars with shares to two decimals (check set cs-7)."""
+    return _self_transfers_as_revenue(ledger, as_of, 2, numfmt.usd, numfmt.pct, numfmt.pct)
+
+
+def _self_transfers_as_revenue(
+    ledger: Ledger, as_of: datetime, version: int, money: Text, share_text: Text, limit_text: Text
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     app = k.application
     names = {
@@ -204,13 +235,14 @@ def self_transfers_as_revenue(ledger: Ledger, as_of: datetime) -> list[FindingDr
     return [
         FindingDraft(
             check_key="self_transfers_as_revenue",
-            check_version=1,
+            check_version=version,
             severity="review",
             pillar="integrity",
             summary=(
-                f"{len(own)} bank inflow(s) worth {amount} of {total} over the last "
-                f"{WINDOW_DAYS} days ({share:.1%}) came from the owner's or the borrower's own "
-                f"accounts ({', '.join(who)}); the limit is {SELF_TRANSFER_MAX_SHARE:.0%}."
+                f"{len(own)} bank inflow(s) worth {money(amount)} of {money(total)} over the last "
+                f"{WINDOW_DAYS} days ({share_text(share)}) came from the owner's or the "
+                f"borrower's own accounts ({', '.join(who)}); the limit is "
+                f"{limit_text(SELF_TRANSFER_MAX_SHARE)}."
             ),
             evidence_refs=_refs(t.evidence for t in own),
             facts={
@@ -228,6 +260,18 @@ def self_transfers_as_revenue(ledger: Ledger, as_of: datetime) -> list[FindingDr
 def unexplained_recurring_debit(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     """An outflow counterparty with >= 10 debits in the last 30 days, >= 80% for the same
     amount, and no payable invoice to it in the known data."""
+    return _unexplained_recurring_debit(ledger, as_of, 1, _RAW)
+
+
+@check("unexplained_recurring_debit", 2)
+def unexplained_recurring_debit_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check, written in dollars (check set cs-7)."""
+    return _unexplained_recurring_debit(ledger, as_of, 2, numfmt.usd)
+
+
+def _unexplained_recurring_debit(
+    ledger: Ledger, as_of: datetime, version: int, money: Text
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     today = as_of.date()
     start = today - timedelta(days=RECURRING_WINDOW_DAYS)
@@ -259,13 +303,13 @@ def unexplained_recurring_debit(ledger: Ledger, as_of: datetime) -> list[Finding
         drafts.append(
             FindingDraft(
                 check_key="unexplained_recurring_debit",
-                check_version=1,
+                check_version=version,
                 severity="review",
                 pillar="integrity",
                 summary=(
                     f"{len(debits)} debits to {cp} in the last {RECURRING_WINDOW_DAYS} days "
-                    f"totalling {total}, {n_same} of them exactly {amount}, with no payable "
-                    f"invoice to this counterparty."
+                    f"totalling {money(total)}, {n_same} of them exactly {money(amount)}, with no "
+                    f"payable invoice to this counterparty."
                     + (" The name looks like a lender." if lender else "")
                 ),
                 evidence_refs=_refs(t.evidence for t in debits),

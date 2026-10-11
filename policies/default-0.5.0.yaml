@@ -1,0 +1,75 @@
+# Default policy. Each lender gets its own copy; the lender's credit team owns it.
+# Steps run in order: knockout -> bands -> uplift -> review cap -> limit -> stress. Thresholds are
+# starting guesses; tune on the backtest. max/min are inclusive.
+version: "0.5.0"
+metric_set: ms-4
+check_set: cs-6
+
+knockout:
+  # A hold finding in these review states blocks a decision.
+  open_finding_severity: hold
+  hold_states: [open, accepted]
+  # Holds raised by the agent (origin "model") block only in these states: an agent finding is a
+  # lead until an analyst accepts it. Rule-check holds use hold_states above. (0.3.0)
+  model_hold_states: [accepted]
+
+bands:
+  # First band whose conditions all hold wins; evaluated A to D.
+  - band: A
+    when: { refund_rate: { max: 0.03 }, gross_margin_est: { min: 0.35 }, payables_discipline: { min: 0.90 } }
+  - band: B
+    when: { refund_rate: { max: 0.05 }, gross_margin_est: { min: 0.25 } }
+  - band: C
+    when: { refund_rate: { max: 0.08 } }
+  - band: D
+    when: {}
+
+uplift:
+  # (0.4.0) Strengths outside the ledger's bands can lift the band ONE notch at most, never above
+  # the ceiling, and never after a knockout. It runs before the review cap, so an open review
+  # finding still caps the band. Any one enabled route is enough; routes do not stack. A route
+  # with a missing metric is not evaluated. All thresholds are guesses (docs/intangibles-plan.md).
+  max_notches: 1
+  ceiling: B
+  # Added to the reputation route only: every public signal must come from a match that counts.
+  requires: { entity_match_ok: { min: 1 } }
+  requires_for: [reputation]
+  routes:
+    # Google/Yelp ratings have no history, so this route cannot be backtested yet: present for
+    # analysts to see, off until a lender turns it on.
+    reputation:
+      { enabled: false, review_rating_shrunk: { min: 4.4 }, review_count: { min: 75 }, years_trading: { min: 3 } }
+    loyalty:
+      { repeat_customer_share: { min: 0.35 }, loyalty_mention_share: { min: 0.15 } }
+    stock:
+      { stock_cover: { min: 1.0 }, aged_stock_share: { max: 0.20 }, days_of_inventory: { max: 120 } }
+
+review_findings:
+  # Open or accepted review-severity findings cap the band: best possible is C.
+  cap_band_at: C
+
+limit:
+  base_metric: net_revenue
+  share: { A: 0.40, B: 0.30, C: 0.20, D: 0.10 }
+  max: { A: 250000, B: 150000, C: 75000, D: 25000 }
+  history:
+    metric: history_days
+    min_days: 183
+    short_history_share_factor: 0.5
+
+stress:
+  # (0.5.0) Systemic exposure (docs/systemic-risk-plan.md). After the limit, the first rule whose
+  # conditions hold reduces the LIMIT, never the band: a tariff changes how much to put at risk,
+  # not how well the business is run. stressed_runway is months of cash if the borrower absorbs
+  # every enacted or announced tariff on its stated imports (capped at 24). A missing input (no
+  # import mix stated) is not evaluated and leaves the limit unchanged; cs-6 flags it as info.
+  floor: 0.5
+  rules:
+    - when: { stressed_runway: { max: 3 } }
+      limit_factor: 0.5
+    - when: { stressed_runway: { max: 6 } }
+      limit_factor: 0.75
+    # The tariff itself turns monthly cash flow negative: the cash the loan is repaid from goes.
+    # (tariff_margin_shock >= 0.02 keeps this to businesses the tariff actually hits.)
+    - when: { stressed_flow_margin: { max: 0 }, tariff_margin_shock: { min: 0.02 } }
+      limit_factor: 0.75

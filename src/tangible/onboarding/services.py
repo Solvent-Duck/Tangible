@@ -23,6 +23,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
+from tangible import numfmt
 from tangible.db.repo import create_borrower
 from tangible.db.session import Conn, tenant_session
 from tangible.db.signals import insert_application
@@ -150,7 +151,7 @@ def _tenant_name(conn: Conn) -> str:
 
 
 def _money_text(amount: Decimal | None) -> str | None:
-    return f"${amount:,.0f}" if amount is not None else None
+    return numfmt.usd(amount) if amount is not None else None
 
 
 # ---------------------------------------------------------------- invite rows and status
