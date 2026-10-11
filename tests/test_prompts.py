@@ -34,3 +34,15 @@ def test_released_prompts_are_pinned() -> None:
             f"{f.name} was edited; add a new @vN file instead"
         )
     assert {f.name.removesuffix(".md") for f in files} == set(PROMPT_HASHES)
+
+
+def test_investigate_v3_is_the_latest_and_teaches_verification() -> None:
+    p = load_prompt("investigate", 3)
+    assert p.key == "investigate" and p.version == 3
+    assert p.sha256 == PROMPT_HASHES["investigate@v3"] and len(p.sha256) == 64
+    assert latest("investigate") == p
+    for needle in ("run_analysis", "query_ledger", "record_finding", "UNVERIFIED", "hold"):
+        assert needle in p.text
+    assert "Checked, nothing found" in p.text
+    # v2 stays loadable and unchanged for assessments frozen against it
+    assert load_prompt("investigate", 2).sha256 == PROMPT_HASHES["investigate@v2"]

@@ -240,6 +240,24 @@ def test_record_finding_with_verifier(ctx: ToolContext, verdict: bool) -> None:
     assert seen == [("Revenue looks odd", [good.result])]
 
 
+def test_verification_feedback_text(ctx: ToolContext) -> None:
+    from tangible.agent.tools.findings import verification_feedback
+    from tangible.agent.verify import verify_numbers
+
+    good = query(ctx, "SELECT 41 AS n")
+    res = call_tool(ctx, "record_finding", finding_args([good.call_id], summary="Counted 41 rows"))
+    assert res.error is None and isinstance(res.result, dict)
+    assert "status" not in res.result  # the stored result is unchanged
+    assert verification_feedback(ctx, res.result) == "recorded"  # no verifier wired
+    ctx.verifier = lambda s, r: verify_numbers(s, r).ok
+    assert verification_feedback(ctx, res.result) == "recorded; verified"
+    bad = res.result | {"summary": "Counted 41 rows, 7 missing and 12.5% off"}
+    text = verification_feedback(ctx, bad)
+    assert text.startswith("recorded; UNVERIFIED: numbers not found in cited results: 7, 12.5%")
+    spec = next(d for d in tool_definitions() if d["name"] == "record_finding")
+    assert "UNVERIFIED" in spec["description"] and "run_analysis" in spec["description"]
+
+
 # ---------------------------------------------------------------- questions
 
 
