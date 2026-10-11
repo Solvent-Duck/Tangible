@@ -29,6 +29,13 @@ from test_assessment import hidden as hidden_world  # noqa: F401
 pytestmark = pytest.mark.db
 
 
+@pytest.fixture(autouse=True, params=["strands", "classic"])
+def engine(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Every test here runs on both engines: the classic loop is the Strands engine's oracle."""
+    monkeypatch.setenv("TANGIBLE_AGENT_ENGINE", request.param)
+    return str(request.param)
+
+
 @pytest.fixture
 def hw(hidden_world: World) -> World:  # noqa: F811
     return hidden_world
@@ -208,7 +215,7 @@ def test_investigate_requires_approval(hw: World, tmp_path: Path) -> None:
 # ---------------------------------------------------------------- the run
 
 
-def test_scripted_run_end_to_end(hw: World, tmp_path: Path) -> None:
+def test_scripted_run_end_to_end(hw: World, tmp_path: Path, engine: str) -> None:
     policy: Policy = load_policy(POLICY_PATH)
     with tenant_session(hw.url, hw.tenant) as conn:
         case = approved_case(conn, hw)
@@ -245,15 +252,13 @@ def test_scripted_run_end_to_end(hw: World, tmp_path: Path) -> None:
             "AND object_id = %s",
             (case.id,),
         ).fetchall()
-        assert audit == [
-            (
-                "agent",
-                {
-                    "stop_reason": "end_turn", "steps": 4, "cost_usd": "0.000000",
-                    "wrap_up": "Plan risks covered.",
-                },
-            )
-        ]  # fmt: skip
+        assert len(audit) == 1 and audit[0][0] == "agent"
+        detail = audit[0][1]
+        assert {k: detail[k] for k in ("stop_reason", "steps", "cost_usd", "wrap_up")} == {
+            "stop_reason": "end_turn", "steps": 4, "cost_usd": "0.000000",
+            "wrap_up": "Plan risks covered.",
+        }  # fmt: skip
+        assert detail["engine"] == engine
         # 1 plan call + 4 investigation turns
         assert conn.execute(
             "SELECT count(*) FROM model_call WHERE prompt_key = 'investigate'"
@@ -443,7 +448,8 @@ def test_record_finding_feedback_names_unmatched_numbers(hw: World, tmp_path: Pa
         res = run(conn, case, client, tmp_path)
         bad = tool_output_texts(client.calls[2])[-1]
         assert "recorded; UNVERIFIED: numbers not found in cited results:" in bad
-        assert "99,999.99" in bad and "53" in bad and "41" not in bad.split("results:")[1]
+        listed = bad.split("results:")[1].split(". This finding")[0]  # not the uuids after it
+        assert "99,999.99" in listed and "53" in listed and "41" not in listed
         good = tool_output_texts(client.calls[4])[-1]
         assert "recorded; verified" in good and "UNVERIFIED" not in good
         # Feedback is display only: both findings are stored as before, and the logged result

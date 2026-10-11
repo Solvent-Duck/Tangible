@@ -1,0 +1,23 @@
+{
+  "note": "Demo fixtures. These notices are FICTIONAL, written in the shape of Federal Register tariff actions; they are not real government actions.",
+  "actions": [
+    {
+      "document_number": "DEMO-2025-0007",
+      "title": "[Demo fixture, fictional] Additional duties on certain furniture and lighting from China",
+      "publication_date": "2025-04-10",
+      "effective_on": "2025-05-01",
+      "hs_chapters": ["94"],
+      "countries": ["CN"],
+      "additional_duty": "0.10"
+    },
+    {
+      "document_number": "DEMO-2026-0001",
+      "title": "[Demo fixture, fictional] Additional duties on certain electrical parts, hand tools and furniture from China",
+      "publication_date": "2026-09-24",
+      "effective_on": "2026-11-01",
+      "hs_chapters": ["82", "85", "94"],
+      "countries": ["CN"],
+      "additional_duty": "0.25"
+    }
+  ]
+}

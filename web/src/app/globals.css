@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+/* Tangible design tokens. Light by default, dark via prefers-color-scheme or data-theme. */
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --surface-2: #f0efea;
+  --surface-3: #e8e6df;
+  --border: #e2e0d8;
+  --border-strong: #cfccc2;
+  --text: #1a1a17;
+  --muted: #67665e;
+  --faint: #8f8d84;
+  --brand: #2b5a4c;
+  --brand-hover: #234a3f;
+  --brand-fg: #ffffff;
+  --brand-soft: #e3eee9;
+  --brand-ink: #1f4a3d;
+  --hold: #b23a32;
+  --hold-soft: #f9e6e3;
+  --review: #a86a12;
+  --review-soft: #f8edd8;
+  --info: #3462a0;
+  --info-soft: #e3ebf6;
+  --ok: #2c7a4b;
+  --ok-soft: #e1f1e7;
+  --ring: #2b5a4c55;
+  --shadow: 0 1px 2px rgb(20 20 15 / 0.04), 0 1px 1px rgb(20 20 15 / 0.03);
+  --shadow-lg: 0 12px 32px -12px rgb(20 20 15 / 0.18), 0 2px 6px rgb(20 20 15 / 0.05);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e100f;
+    --surface: #151816;
+    --surface-2: #1b1f1d;
+    --surface-3: #232825;
+    --border: #272c29;
+    --border-strong: #353b37;
+    --text: #ecebe5;
+    --muted: #a2a198;
+    --faint: #75746c;
+    --brand: #74b9a0;
+    --brand-hover: #8ccab3;
+    --brand-fg: #0c110f;
+    --brand-soft: #1b2e27;
+    --brand-ink: #9fd3bf;
+    --hold: #e8796f;
+    --hold-soft: #3a1f1c;
+    --review: #e0a54a;
+    --review-soft: #36291a;
+    --info: #85aee6;
+    --info-soft: #1c2738;
+    --ok: #6cc58f;
+    --ok-soft: #1a3022;
+    --ring: #74b9a066;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 0.6);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0e100f;
+  --surface: #151816;
+  --surface-2: #1b1f1d;
+  --surface-3: #232825;
+  --border: #272c29;
+  --border-strong: #353b37;
+  --text: #ecebe5;
+  --muted: #a2a198;
+  --faint: #75746c;
+  --brand: #74b9a0;
+  --brand-hover: #8ccab3;
+  --brand-fg: #0c110f;
+  --brand-soft: #1b2e27;
+  --brand-ink: #9fd3bf;
+  --hold: #e8796f;
+  --hold-soft: #3a1f1c;
+  --review: #e0a54a;
+  --review-soft: #36291a;
+  --info: #85aee6;
+  --info-soft: #1c2738;
+  --ok: #6cc58f;
+  --ok-soft: #1a3022;
+  --ring: #74b9a066;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-ink: var(--brand-ink);
+  --color-hold: var(--hold);
+  --color-hold-soft: var(--hold-soft);
+  --color-review: var(--review);
+  --color-review-soft: var(--review-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-display-serif), ui-serif, Georgia, serif;
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot { animation: none; }
+  * { scroll-behavior: auto !important; }
+}

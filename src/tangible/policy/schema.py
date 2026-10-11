@@ -54,6 +54,47 @@ class LimitRule:
 
 
 @dataclass(frozen=True)
+class UpliftRoute:
+    name: str
+    enabled: bool
+    when: tuple[Condition, ...]
+
+
+@dataclass(frozen=True)
+class Uplift:
+    """Optional (0.4.0+). After bands and before the review cap, a route whose conditions all
+    hold lifts the band by at most `max_notches` (0 or 1), never above `ceiling`. `requires`
+    conditions are added to the routes named in `requires_for` (every route when None)."""
+
+    max_notches: int
+    ceiling: str
+    requires: tuple[Condition, ...]
+    requires_for: tuple[str, ...] | None
+    routes: tuple[UpliftRoute, ...]
+
+    def conditions(self, route: UpliftRoute) -> tuple[Condition, ...]:
+        if self.requires_for is None or route.name in self.requires_for:
+            return (*self.requires, *route.when)
+        return route.when
+
+
+@dataclass(frozen=True)
+class StressRule:
+    when: tuple[Condition, ...]
+    limit_factor: Decimal
+
+
+@dataclass(frozen=True)
+class Stress:
+    """Optional (0.5.0+). After the limit, the first rule whose conditions all hold multiplies the
+    limit by its `limit_factor` (never below `floor`, never above 1). It never changes the band. A
+    rule with a missing metric is not evaluated and does not fire."""
+
+    floor: Decimal
+    rules: tuple[StressRule, ...]
+
+
+@dataclass(frozen=True)
 class PolicySpec:
     version: str
     metric_set: str
@@ -62,6 +103,8 @@ class PolicySpec:
     bands: tuple[BandRule, ...]
     review_findings: ReviewCap
     limit: LimitRule
+    uplift: Uplift | None = None  # absent in 0.2.x / 0.3.0 files
+    stress: Stress | None = None  # absent before 0.5.0
 
 
 def _mapping(
@@ -132,12 +175,79 @@ def _conditions(v: Any, path: str) -> tuple[Condition, ...]:
     return tuple(out)
 
 
+def _uplift(v: Any) -> Uplift:
+    path = "policy.uplift"
+    m = _mapping(
+        v, path, {"max_notches", "ceiling", "requires", "requires_for", "routes"},
+        {"max_notches", "ceiling", "routes"},
+    )  # fmt: skip
+    notches = m["max_notches"]
+    if isinstance(notches, bool) or notches not in (0, 1):
+        raise ValueError(f"{path}.max_notches: must be 0 or 1 (one notch at most)")
+    ceiling = _band(m["ceiling"], f"{path}.ceiling")
+    requires = _conditions(m.get("requires", {}), f"{path}.requires")
+    raw_routes = m["routes"]
+    if not isinstance(raw_routes, dict) or not raw_routes:
+        raise ValueError(f"{path}.routes: expected a non-empty mapping")
+    routes = []
+    for name, body in raw_routes.items():
+        p = f"{path}.routes.{name}"
+        if not isinstance(body, dict):
+            raise ValueError(f"{p}: expected a mapping, got {type(body).__name__}")
+        body = dict(body)
+        enabled = body.pop("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError(f"{p}.enabled: expected true or false")
+        when = _conditions(body, p)
+        if not when:
+            raise ValueError(f"{p}: needs at least one metric condition")
+        routes.append(UpliftRoute(_str(name, p), enabled, when))
+    names = [r.name for r in routes]
+    requires_for: tuple[str, ...] | None = None
+    if "requires_for" in m:
+        raw = m["requires_for"]
+        if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+            raise ValueError(f"{path}.requires_for: expected a list of route names")
+        stray = [x for x in raw if x not in names]
+        if stray:
+            raise ValueError(f"{path}.requires_for: unknown route(s) {stray}")
+        requires_for = tuple(raw)
+    return Uplift(notches, ceiling, requires, requires_for, tuple(routes))
+
+
+def _stress(v: Any) -> Stress:
+    path = "policy.stress"
+    m = _mapping(v, path, {"floor", "rules"})
+    floor = _num(m["floor"], f"{path}.floor")
+    if not Decimal(0) < floor <= Decimal(1):
+        raise ValueError(f"{path}.floor: must be in (0, 1]")
+    raw = m["rules"]
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{path}.rules: expected a non-empty list")
+    rules = []
+    for i, r in enumerate(raw):
+        p = f"{path}.rules[{i}]"
+        body = _mapping(r, p, {"when", "limit_factor"})
+        when = _conditions(body["when"], f"{p}.when")
+        if not when:
+            raise ValueError(f"{p}.when: needs at least one metric condition")
+        factor = _num(body["limit_factor"], f"{p}.limit_factor")
+        if not floor <= factor < Decimal(1):
+            raise ValueError(f"{p}.limit_factor: must be in [floor, 1): it only ever reduces")
+        rules.append(StressRule(when, factor))
+    return Stress(floor, tuple(rules))
+
+
 def parse_policy(spec: Any) -> PolicySpec:
     top = _mapping(
         spec,
         "policy",
+        {
+            "version", "metric_set", "check_set", "knockout", "bands", "review_findings",
+            "limit", "uplift", "stress",
+        },
         {"version", "metric_set", "check_set", "knockout", "bands", "review_findings", "limit"},
-    )
+    )  # fmt: skip
     version = _str(str(top["version"]), "policy.version")
     if not _VERSION_RE.match(version):
         raise ValueError(f"policy.version: expected MAJOR.MINOR.PATCH, got {version!r}")
@@ -212,4 +322,6 @@ def parse_policy(spec: Any) -> PolicySpec:
         bands=tuple(bands),
         review_findings=cap,
         limit=limit,
+        uplift=_uplift(top["uplift"]) if "uplift" in top else None,
+        stress=_stress(top["stress"]) if "stress" in top else None,
     )

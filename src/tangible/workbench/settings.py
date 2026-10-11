@@ -8,17 +8,19 @@ from pathlib import Path
 
 from tangible.agent.llm import ModelClient, Pricing, client_from_env
 from tangible.config import database_url
-from tangible.secrets import EnvSecrets, SecretStore
 from tangible.web.fixtures import demo_provider
 from tangible.web.provider import WebProvider
 
 _DEFAULT_POLICY = Path(__file__).resolve().parents[3] / "policies" / "default.yaml"
 
 
-def _opt_bool(value: str | None) -> bool | None:
-    if value is None or value == "":
-        return None
-    return value.strip().lower() not in ("0", "false", "no", "off")
+def _auth_backend(value: str | None) -> str:
+    """TANGIBLE_AUTH_MODE: oidc (default) or clerk. "dev" is TANGIBLE_DEV_AUTH=1, kept as the one
+    switch for the unsafe mode so it is never turned on by a typo here."""
+    mode = (value or "oidc").strip().lower()
+    if mode not in ("oidc", "clerk"):
+        raise ValueError(f"TANGIBLE_AUTH_MODE must be 'oidc' or 'clerk', not {mode!r}")
+    return mode
 
 
 @dataclass(frozen=True)
@@ -37,33 +39,30 @@ class Settings:
     web_provider: str = "none"
     # With web_provider == "fixtures": a path to an index.json; None means the packaged demo set.
     web_fixtures: Path | None = None
-    # --- OIDC (auth_mode == "oidc"). One IdP per deployment is assumed.
+    # --- OIDC (auth_mode == "oidc"): bearer access tokens for the API. One IdP per deployment.
     oidc_issuer: str | None = None
-    oidc_client_id: str | None = None
-    # A SecretStore ref (e.g. `env:OIDC_SECRET`), never the secret itself.
-    oidc_client_secret_ref: str | None = None
-    oidc_audience: str | None = None  # API token audience; defaults to the client id
-    oidc_redirect_uri: str | None = None
-    oidc_scopes: str = "openid email profile"
+    oidc_client_id: str | None = None  # checked against `azp` on multi-audience tokens
+    oidc_audience: str | None = None  # the API's own audience (never the client id)
     oidc_tenant_claim: str = "tangible_tenant"
-    # HMAC key for session cookies (>= 32 bytes). Excluded from repr so it never reaches logs.
-    session_secret: str | None = field(default=None, repr=False)
-    session_hours: float = 8.0
-    cookie_secure: bool | None = None  # None: on in oidc mode, off in dev mode
     # Test-only: permit http:// issuer/endpoints. Deliberately not readable from the environment.
     oidc_allow_insecure_http: bool = False
-    secret_store: SecretStore = field(default_factory=EnvSecrets, repr=False)
     # Hosted dev-auth demos only: one shared password (HTTP Basic) in front of everything.
     access_password: str | None = field(default=None, repr=False)
+    # "oidc" or "clerk" (TANGIBLE_AUTH_MODE). dev_auth (TANGIBLE_DEV_AUTH=1) overrides both.
+    auth_backend: str = "oidc"
+    # --- Clerk (auth_mode == "clerk"): the instance's Frontend API URL (the token issuer) and the
+    # origins allowed in a session token's `azp` (the web app's URLs).
+    clerk_issuer: str | None = None
+    clerk_authorized_parties: tuple[str, ...] = ()
+    # --- Onboarding: where invite links point (the web app), invite lifetime, optional SMTP.
+    public_url: str = "http://localhost:3000"
+    invite_days: int = 14
+    smtp_url: str | None = None
 
     @property
     def auth_mode(self) -> str:
-        """ "dev" only when TANGIBLE_DEV_AUTH=1 (dev_auth); otherwise "oidc"."""
-        return "dev" if self.dev_auth else "oidc"
-
-    @property
-    def secure_cookies(self) -> bool:
-        return self.cookie_secure if self.cookie_secure is not None else not self.dev_auth
+        """ "dev" when TANGIBLE_DEV_AUTH=1 (dev_auth); otherwise `auth_backend` (oidc or clerk)."""
+        return "dev" if self.dev_auth else self.auth_backend
 
     def build_web_provider(self) -> WebProvider | None:
         """The provider handed to the agent's tools; None when web lookup is off."""
@@ -86,15 +85,19 @@ class Settings:
             dev_auth=env.get("TANGIBLE_DEV_AUTH") == "1",
             oidc_issuer=env.get("TANGIBLE_OIDC_ISSUER") or None,
             oidc_client_id=env.get("TANGIBLE_OIDC_CLIENT_ID") or None,
-            oidc_client_secret_ref=env.get("TANGIBLE_OIDC_CLIENT_SECRET_REF") or None,
             oidc_audience=env.get("TANGIBLE_OIDC_AUDIENCE") or None,
-            oidc_redirect_uri=env.get("TANGIBLE_OIDC_REDIRECT_URI") or None,
-            oidc_scopes=env.get("TANGIBLE_OIDC_SCOPES") or "openid email profile",
             oidc_tenant_claim=env.get("TANGIBLE_OIDC_TENANT_CLAIM") or "tangible_tenant",
-            session_secret=env.get("TANGIBLE_SESSION_SECRET") or None,
-            session_hours=float(env.get("TANGIBLE_SESSION_HOURS", "8")),
-            cookie_secure=_opt_bool(env.get("TANGIBLE_COOKIE_SECURE")),
             access_password=env.get("TANGIBLE_ACCESS_PASSWORD") or None,
+            auth_backend=_auth_backend(env.get("TANGIBLE_AUTH_MODE")),
+            clerk_issuer=env.get("TANGIBLE_CLERK_ISSUER") or None,
+            clerk_authorized_parties=tuple(
+                o.strip().rstrip("/")
+                for o in (env.get("TANGIBLE_CLERK_AUTHORIZED_PARTIES") or "").split(",")
+                if o.strip()
+            ),
+            public_url=env.get("TANGIBLE_PUBLIC_URL") or "http://localhost:3000",
+            invite_days=int(env.get("TANGIBLE_INVITE_DAYS", "14")),
+            smtp_url=env.get("TANGIBLE_SMTP_URL") or None,
             pricing=Pricing(
                 Decimal(env.get("TANGIBLE_PRICE_IN_PER_MTOK", "0")),
                 Decimal(env.get("TANGIBLE_PRICE_OUT_PER_MTOK", "0")),

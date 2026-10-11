@@ -332,8 +332,11 @@ def test_policy_change_is_reported(clean: World, policy: Policy, tmp_path: Path)
     assert not match and any(d.startswith("policy changed") for d in diffs)
 
 
-def test_replay_uses_the_policy_file_the_assessment_was_frozen_under(clean: World) -> None:
-    old = load_policy(POLICY_PATH.parent / "default-0.2.2.yaml")
+@pytest.mark.parametrize("frozen_file", ["default-0.2.2.yaml", "default-0.3.0.yaml"])
+def test_replay_uses_the_policy_file_the_assessment_was_frozen_under(
+    clean: World, frozen_file: str
+) -> None:
+    old = load_policy(POLICY_PATH.parent / frozen_file)
     assert old.sha256 != load_policy(POLICY_PATH).sha256
     _, aid = baseline_and_freeze(clean, old)
     assert do_replay(clean, aid, POLICY_PATH) == (True, [])

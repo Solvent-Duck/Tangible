@@ -226,6 +226,10 @@ A versioned policy file turns metrics and findings into a decision band and a su
 - Replay = load the same ledger rows by `observed_at`, rerun metric and policy versions, and confirm the same result. Run replay as a nightly test on a sample.
 - Underwriter overrides sit beside the assessment, never inside it, so we can measure how often people disagree with the engine and who was right.
 
+## Borrower onboarding
+
+Lenders invite a business by email and choose what to request beyond standard financials (inventory, digital presence, reputation, longevity, community, custom items). The business signs up, connects its systems read-only, uploads what cannot be connected and submits; the lender then opens a case. Borrowers have their own login, scoped to their own onboarding and never to a case. Details: [onboarding.md](onboarding.md).
+
 ## Security and tenancy
 
 Each lender's data stays walled off at the database, storage, and key level, and every access is logged.

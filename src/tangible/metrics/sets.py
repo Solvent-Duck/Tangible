@@ -31,6 +31,30 @@ METRIC_SETS: dict[str, tuple[tuple[str, int], ...]] = {
         ("payables_days_slope_13w", 1),
     ),
 }
+# ms-3: ms-2 plus the intangibles metrics (docs/intangibles-plan.md, v1 slice).
+METRIC_SETS["ms-3"] = (
+    *METRIC_SETS["ms-2"],
+    ("review_rating_shrunk", 1),
+    ("review_count", 1),
+    ("owner_response_rate", 1),
+    ("years_trading", 1),
+    ("presence_channels", 1),
+    ("loyalty_mention_share", 1),
+    ("stock_value_at_cost", 1),
+    ("stock_cover", 1),
+    ("entity_match_ok", 1),
+)
+# ms-4: ms-3 plus the systemic exposure metrics (docs/systemic-risk-plan.md, hackathon slice).
+METRIC_SETS["ms-4"] = (
+    *METRIC_SETS["ms-3"],
+    ("import_share", 1),
+    ("tariff_rate_change", 1),
+    ("tariff_margin_shock", 1),
+    ("stock_buffer_months", 1),
+    ("stressed_margin", 1),
+    ("stressed_flow_margin", 1),
+    ("stressed_runway", 1),
+)
 
 
 def metric_set(set_id: str) -> tuple[tuple[str, int], ...]:

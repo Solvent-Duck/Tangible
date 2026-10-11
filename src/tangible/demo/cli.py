@@ -2,12 +2,13 @@
 
     tangible-demo seed [--name demo] [--end-on DATE] [--store .evidence] [--work data/demo]
                        [--lines data/processed/uci_lines.csv] [--run-agent]
+                       [--link-subject CLERK_USER_ID]
     tangible-demo statements --tenant-id T --borrower NAME --out DIR [--month YYYY-MM]
                              [--account REF]
 
-`seed`: each run creates a new tenant and prints its dev-login URL. `--run-agent` makes live model
-calls (about $1.50 per staged case) and needs TANGIBLE_MODEL_BACKEND and its settings; the
-Makefile has the demo values.
+`seed`: each run creates a new tenant and prints its web-app sign-in URL. `--run-agent` makes
+live model calls (about $1.50 per staged case) and needs TANGIBLE_MODEL_BACKEND and its
+settings; the Makefile has the demo values.
 """
 
 import argparse
@@ -44,7 +45,11 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--store", type=Path, default=Path(".evidence"), help="evidence store folder")
     s.add_argument("--work", type=Path, default=Path("data/demo"), help="scratch folder")
     s.add_argument("--lines", type=Path, default=Path("data/processed/uci_lines.csv"))
-    s.add_argument("--base-url", default=DEFAULT_BASE_URL, help="where the workbench is served")
+    s.add_argument("--base-url", default=DEFAULT_BASE_URL, help="where the web app is served")
+    s.add_argument(
+        "--link-subject", default=None, metavar="SUBJECT",
+        help="also make this sign-in subject (a Clerk user id) the tenant's credit admin",
+    )  # fmt: skip
     s.add_argument(
         "--run-agent", action="store_true",
         help="drive the staged cases with the live model (costs about $1.50 per case)",
@@ -69,6 +74,7 @@ def main(argv: list[str] | None = None) -> None:
         summary = seed_demo(
             name=args.name, end_on=args.end_on, store=args.store, work=args.work,
             lines=args.lines, run_agent=args.run_agent, base_url=args.base_url,
+            link_subject=args.link_subject,
         )  # fmt: skip
     except SeedError as e:
         print(f"tangible-demo: {e}", file=sys.stderr)
@@ -76,8 +82,8 @@ def main(argv: list[str] | None = None) -> None:
     print()
     print(summary.render())
     if args.base_url == DEFAULT_BASE_URL:
-        print(f"\nOn the workbench-demo launch config: {WORKBENCH_DEMO_URL}/dev/login"
-              f"?tenant={summary.tenant_id}")  # fmt: skip
+        print(f"\nWith the API on the workbench-demo launch config, run the web app as "
+              f"TANGIBLE_API_URL={WORKBENCH_DEMO_URL} make web-dev")  # fmt: skip
 
 
 def _statements(args: argparse.Namespace) -> None:

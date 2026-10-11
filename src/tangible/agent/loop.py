@@ -7,8 +7,9 @@ back wrapped as quoted, untrusted data. Budgets are enforced here, not by the mo
 
 import html
 import json
+import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -17,12 +18,20 @@ from typing import Any
 from tangible.agent.llm import LoggedClient, ModelClient, Pricing
 from tangible.agent.prompts import Prompt, load_prompt
 from tangible.agent.snapshot import schema_summary
-from tangible.agent.tools import call_tool, open_context, tool_definitions
+from tangible.agent.tools import (
+    ToolContext,
+    ToolResult,
+    call_tool,
+    open_context,
+    tool_definitions,
+)
 from tangible.agent.tools.findings import verification_feedback
 from tangible.agent.tools.library import library_catalog
 from tangible.agent.tools.runtime import Verifier
 from tangible.agent.verify import verify_numbers
 from tangible.assessment import run_baseline
+from tangible.assessment.baseline import refresh_baseline
+from tangible.assessment.hashing import ledger_input_hash
 from tangible.db.cases import Case, set_case_status
 from tangible.db.findings import load_findings
 from tangible.db.repo import load_ledger
@@ -283,52 +292,97 @@ def _first_message(
     return "\n".join(parts)
 
 
-def investigate(
-    conn: Conn,
-    case: Case,
-    policy: Policy,
-    client: ModelClient,
-    *,
-    pricing: Pricing,
-    workdir: Path,
-    verifier: Verifier = default_verifier,
-    question: str | None = None,
-    document_client: ModelClient | None = None,
-    evidence_store: EvidenceStore | None = None,
-    web_provider: Any = None,
-) -> InvestigationResult:
-    plan = _approved_plan(conn, case)
-    baseline = run_baseline(conn, case, policy)
-    if document_client is not None and not isinstance(document_client, LoggedClient):
-        # Document reads are model calls too: log them (and their cost) against the case.
-        document_client = LoggedClient(
-            document_client, conn, case, load_prompt("document_reader", 1), pricing
-        )
-    ctx = open_context(
-        conn, case, policy, workdir, verifier,
-        document_client=document_client,
-        evidence_store=evidence_store,
-        web_provider=web_provider,
-    )  # fmt: skip
-    system, prompts = _system_text("system", "investigate")
-    logged = LoggedClient(client, conn, case, prompts[-1], pricing)
-    tools = tool_definitions(ctx)
-    summary = _baseline_summary(conn, case, list(baseline.metric_ids.values()))
-    reference = {"library": _catalog(policy), "snapshot_tables": schema_summary()}
-    messages: list[dict[str, Any]] = [
-        {
-            "role": "user",
-            "content": _first_message(
-                plan, summary, reference, question, _borrower_name(conn, case)
-            ),
-        }
-    ]
-    set_case_status(conn, case.id, "investigating")
+@dataclass
+class RunSetup:
+    """Everything an engine needs for one investigation run. Built once, engine-neutral."""
 
+    case: Case
+    ctx: ToolContext
+    logged: LoggedClient
+    system: str
+    tools: list[dict[str, Any]]
+    first_message: str
+    # Who the business is (trusted, from the case). Set when public-records search is available;
+    # the Strands engine then runs the search team before the lead investigator.
+    search_brief: str = ""
+
+
+@dataclass(frozen=True)
+class RunOutcome:
+    stop_reason: str  # end_turn | step_budget | cost_budget
+    steps: int
+    model_id: str
+    wrap_up: str = ""  # the model's closing message, kept for the analyst (unverified prose)
+    detail: dict[str, Any] = field(default_factory=dict)  # engine extras for the audit row
+
+
+ENGINES = ("strands", "classic")
+
+
+def engine_from_env() -> str:
+    """TANGIBLE_AGENT_ENGINE = strands (default) | classic."""
+    name = os.environ.get("TANGIBLE_AGENT_ENGINE", "").strip().lower() or "strands"
+    if name not in ENGINES:
+        raise ValueError(f"unknown TANGIBLE_AGENT_ENGINE {name!r} (use strands or classic)")
+    return name
+
+
+def search_brief(ctx: ToolContext, borrower_name: str | None) -> str:
+    """The public-records search task: who the business is, from the application (trusted)."""
+    app = ctx.known.application
+    fields = [
+        ("Legal name", app.legal_name if app else None),
+        ("Trading as", app.dba if app else None),
+        ("Address", ", ".join(x for x in (app.address, app.state) if x) if app else None),
+        ("Phone", app.phone if app else None),
+        ("Website", app.website if app else None),
+        ("NAICS industry code", app.naics if app else None),
+    ]
+    lines = [f"- {k}: {v}" for k, v in fields if v]
+    if not lines and borrower_name:
+        lines = [f"- Name on file: {borrower_name}"]
+    return "\n".join(
+        [
+            "Business to look up (trusted, from the loan application on file):",
+            *(lines or ["- (no identity on file)"]),
+            f"Case date: {ctx.case.as_of.date().isoformat()}.",
+            "Search the public sources for this business and record what you can confirm.",
+        ]
+    )
+
+
+def wrap_up_notice(case: Case, steps: int, stalled: int, notified: set[str]) -> str | None:
+    """The trusted wrap-up nudge, at most once per kind. Shared by both engines."""
+    why = None
+    if case.budget_steps - steps == 1 and "budget" not in notified:
+        why, kind = "one model step is left in this investigation's budget.", "budget"
+    elif stalled >= STALL_STEPS and "stall" not in notified:
+        why, kind = f"the last {stalled} steps returned only tool errors.", "stall"
+    if why is None:
+        return None
+    notified.add(kind)
+    return WRAP_UP_NOTICE.format(why=why)
+
+
+def tool_payload(ctx: ToolContext, name: str, out: ToolResult) -> tuple[str, bool]:
+    """What the model sees for one tool call (before wrapping), and whether it failed."""
+    if out.error is not None:
+        return out.error, True
+    shown = out.result
+    if name == "record_finding" and isinstance(shown, dict):
+        # Feedback for the model only; the logged tool_call result is unchanged.
+        shown = {**shown, "status": verification_feedback(ctx, shown)}
+    return json.dumps(shown, ensure_ascii=False), False
+
+
+def run_classic(setup: RunSetup) -> RunOutcome:
+    """The hand-written loop: kept as the fallback engine and the parity oracle in tests."""
+    case, ctx, logged = setup.case, setup.ctx, setup.logged
+    messages: list[dict[str, Any]] = [{"role": "user", "content": setup.first_message}]
     steps = 0
     model_id = ""
     stop_reason = "end_turn"
-    wrap_up = ""  # the model's closing message, kept for the analyst (unverified prose)
+    wrap_up = ""
     stalled = 0  # consecutive steps whose tool calls all failed
     notified: set[str] = set()  # wrap-up notices already sent: "budget", "stall"
     while True:
@@ -338,7 +392,7 @@ def investigate(
         if logged.cost >= case.budget_usd:
             stop_reason = "cost_budget"
             break
-        resp = logged.complete(system=system, messages=messages, tools=tools)
+        resp = logged.complete(system=setup.system, messages=messages, tools=setup.tools)
         steps += 1
         model_id = resp.model_id or model_id
         if not resp.tool_calls:
@@ -356,14 +410,7 @@ def investigate(
         results: list[dict[str, Any]] = []
         for c in resp.tool_calls:
             out = call_tool(ctx, c["name"], c["input"])
-            if out.error is not None:
-                payload, is_error = out.error, True
-            else:
-                shown = out.result
-                if c["name"] == "record_finding" and isinstance(shown, dict):
-                    # Feedback for the model only; the logged tool_call result is unchanged.
-                    shown = {**shown, "status": verification_feedback(ctx, shown)}
-                payload, is_error = json.dumps(shown, ensure_ascii=False), False
+            payload, is_error = tool_payload(ctx, c["name"], out)
             results.append(
                 {
                     "type": "tool_result",
@@ -373,17 +420,73 @@ def investigate(
                 }
             )
         stalled = stalled + 1 if all(r["is_error"] for r in results) else 0
-        why = None
-        if case.budget_steps - steps == 1 and "budget" not in notified:
-            why, kind = "one model step is left in this investigation's budget.", "budget"
-        elif stalled >= STALL_STEPS and "stall" not in notified:
-            why, kind = f"the last {stalled} steps returned only tool errors.", "stall"
-        if why is not None:
-            results.append({"type": "text", "text": WRAP_UP_NOTICE.format(why=why)})
-            notified.add(kind)
+        if (text := wrap_up_notice(case, steps, stalled, notified)) is not None:
+            results.append({"type": "text", "text": text})
         messages.append({"role": "user", "content": results})
+    return RunOutcome(stop_reason, steps, model_id, wrap_up)
 
-    cost = logged.cost.quantize(Decimal("0.000001"))
+
+def investigate(
+    conn: Conn,
+    case: Case,
+    policy: Policy,
+    client: ModelClient,
+    *,
+    pricing: Pricing,
+    workdir: Path,
+    verifier: Verifier = default_verifier,
+    question: str | None = None,
+    document_client: ModelClient | None = None,
+    evidence_store: EvidenceStore | None = None,
+    web_provider: Any = None,
+    signal_provider: Any = None,
+    engine: str | None = None,
+) -> InvestigationResult:
+    engine = engine or engine_from_env()
+    if engine not in ENGINES:
+        raise ValueError(f"unknown engine {engine!r}")
+    plan = _approved_plan(conn, case)
+    baseline = run_baseline(conn, case, policy)
+    start_hash = ledger_input_hash(load_ledger(conn, case.borrower_id).known(case.as_of))
+    if document_client is not None and not isinstance(document_client, LoggedClient):
+        # Document reads are model calls too: log them (and their cost) against the case.
+        document_client = LoggedClient(
+            document_client, conn, case, load_prompt("document_reader", 1), pricing
+        )
+    ctx = open_context(
+        conn, case, policy, workdir, verifier,
+        document_client=document_client,
+        evidence_store=evidence_store,
+        web_provider=web_provider,
+        signal_provider=signal_provider,
+    )  # fmt: skip
+    system, prompts = _system_text("system", "investigate")
+    summary = _baseline_summary(conn, case, list(baseline.metric_ids.values()))
+    reference = {"library": _catalog(policy), "snapshot_tables": schema_summary()}
+    setup = RunSetup(
+        case,
+        ctx,
+        LoggedClient(client, conn, case, prompts[-1], pricing),
+        system,
+        tool_definitions(ctx),
+        _first_message(plan, summary, reference, question, _borrower_name(conn, case)),
+        search_brief(ctx, _borrower_name(conn, case)) if signal_provider is not None else "",
+    )
+    set_case_status(conn, case.id, "investigating")
+
+    if engine == "strands":
+        from tangible.agent.strands_engine import run_strands
+
+        outcome = run_strands(setup)
+    else:
+        outcome = run_classic(setup)
+
+    if ledger_input_hash(load_ledger(conn, case.borrower_id).known(case.as_of)) != start_hash:
+        # The run recorded public signals: metrics and rule checks for the new ledger state,
+        # so the case can be signed on what is now known.
+        refresh_baseline(conn, case, policy)
+
+    cost = setup.logged.cost.quantize(Decimal("0.000001"))
     conn.execute(
         "INSERT INTO audit_log (tenant_id, actor, action, object_kind, object_id, detail) "
         "VALUES (%s, 'agent', 'investigation_stopped', 'case', %s, %s::jsonb)",
@@ -391,8 +494,14 @@ def investigate(
             case.tenant_id,
             case.id,
             json.dumps(
-                {"stop_reason": stop_reason, "steps": steps, "cost_usd": str(cost)}
-                | ({"wrap_up": wrap_up} if wrap_up else {})
+                {
+                    "stop_reason": outcome.stop_reason,
+                    "steps": outcome.steps,
+                    "cost_usd": str(cost),
+                    "engine": engine,
+                }
+                | ({"wrap_up": outcome.wrap_up} if outcome.wrap_up else {})
+                | outcome.detail
             ),
         ),
     )
@@ -401,10 +510,10 @@ def investigate(
         f for f in load_findings(conn, case_id=case.id, current_only=True) if f.origin == "model"
     ]
     return InvestigationResult(
-        stop_reason, steps, cost,
+        outcome.stop_reason, outcome.steps, cost,
         [f.id for f in model],
         [f.id for f in model if f.verified is False],
-        dict(PROMPT_VERSIONS), model_id,
+        dict(PROMPT_VERSIONS), outcome.model_id,
     )  # fmt: skip
 
 
@@ -422,6 +531,8 @@ def send_back(
     document_client: ModelClient | None = None,
     evidence_store: EvidenceStore | None = None,
     web_provider: Any = None,
+    signal_provider: Any = None,
+    engine: str | None = None,
 ) -> InvestigationResult:
     conn.execute(
         "INSERT INTO underwriter_action (tenant_id, case_id, user_id, action, reason) "
@@ -432,5 +543,5 @@ def send_back(
         conn, case, policy, client,
         pricing=pricing, workdir=workdir, verifier=verifier, question=question,
         document_client=document_client, evidence_store=evidence_store,
-        web_provider=web_provider,
+        web_provider=web_provider, signal_provider=signal_provider, engine=engine,
     )  # fmt: skip

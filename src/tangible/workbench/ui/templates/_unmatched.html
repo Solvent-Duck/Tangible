@@ -1,3 +1,0 @@
-{% if f.unmatched_numbers is sequence and f.unmatched_numbers is not string %}
-<p class="unmatched" role="note"><span>{% if f.unmatched_numbers %}Numbers not found in cited tool results: <strong>{{ f.unmatched_numbers | join(', ') }}</strong>{% else %}Unverified when recorded; no individual number can be pointed to now (the cited tool results may not support the claim as a whole).{% endif %}</span></p>
-{% endif %}

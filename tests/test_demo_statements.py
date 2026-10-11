@@ -34,7 +34,6 @@ from test_assessment import clean as clean_world  # noqa: F401
 from test_assessment import datasets  # noqa: F401
 from test_workbench_api import Stack, set_client
 from test_workbench_api import stack as stack  # noqa: F401
-from test_workbench_ui import make_case, plan_and_investigate, post, ui
 
 PULL = "44444444-4444-4444-4444-444444444444"
 NOW = datetime(2030, 1, 1, tzinfo=UTC)  # after every synthetic row was observed
@@ -348,54 +347,56 @@ def _files(data: bytes, name: str) -> dict[str, Any]:
     return {"file": (name, data, "application/pdf")}
 
 
+def _upload(s: Stack, case_id: str, data: bytes, name: str, expect: int = 201, **kw: Any) -> Any:
+    return s.call("POST", f"/api/cases/{case_id}/documents", "ana", expect,
+                  files=_files(data, name), **kw)  # fmt: skip
+
+
+def _workspace(s: Stack, case_id: str) -> dict[str, Any]:
+    out: dict[str, Any] = s.call("GET", f"/api/cases/{case_id}/workspace", "ana", 200).json()
+    return out
+
+
 @db
 def test_upload_rebase_read_check_end_to_end(stack: Stack) -> None:  # noqa: F811
     with tenant_session(stack.w.url, stack.w.tenant) as conn:
         spec = demo.build_spec(load_ledger(conn, stack.w.borrower))
     made = demo.make_statements(spec)
-    case_id = make_case(stack)
-    base = f"/cases/{case_id}"
+    case_id = stack.new_case("ana")
     reader = DeterministicReader()
     set_client(stack, lambda: reader)  # the document reader; no real model anywhere
 
-    # the case has no documents yet; no rebase banner
-    page = ui(stack, "GET", base, "ana", 200).text
-    assert "No documents uploaded" in page and "after the case date" not in page
+    # the case has no documents yet, so nothing needs a rebase
+    ws = _workspace(stack, case_id)
+    assert ws["documents"] == [] and ws["late_uploads"] == 0
 
-    # upload only: stored, observed now, and the case says so with a single button
+    # upload only: stored, observed now, and the case says each one arrived after its date
     for kind in ("genuine", "forged", "edited"):
-        ui(
-            stack,
-            "POST",
-            f"{base}/documents",
-            "ana",
-            303,
-            files=_files(made[kind][0], f"{kind}.pdf"),
-        )
+        up = _upload(stack, case_id, made[kind][0], f"{kind}.pdf").json()
+        assert up["rebase_required"] is True
     assert reader.calls == []  # nothing is read until a rebase creates the case that can use it
-    page = ui(stack, "GET", base, "ana", 200).text
-    assert "3 documents arrived after the case date" in page
-    assert "Rebase the case to include them" in page and page.count("Rebase case</button>") == 1
+    ws = _workspace(stack, case_id)
+    assert ws["late_uploads"] == 3
+    docs = {d["filename"]: d for d in ws["documents"]}
     for kind in ("genuine", "forged", "edited"):
-        sha = hashlib.sha256(made[kind][0]).hexdigest()
-        assert sha in page and f"{kind}.pdf" in page
-    assert page.count("not used</strong>: arrived after the case date") == 3
+        d = docs[f"{kind}.pdf"]
+        assert d["sha256"] == hashlib.sha256(made[kind][0]).hexdigest()
+        assert d["included"] is False and d["read"] is False
     with tenant_session(stack.w.url, stack.w.tenant) as conn:
-        fetched = [
-            r[0]
+        fetched = {
+            r[0].isoformat()
             for r in conn.execute(
-                "SELECT fetched_at FROM evidence_pull WHERE source = 'document_upload' "
-                "ORDER BY fetched_at"
+                "SELECT fetched_at FROM evidence_pull WHERE source = 'document_upload'"
             ).fetchall()
-        ]
-    assert len(fetched) == 3 and all(f.isoformat() in page for f in fetched)
+        }
+    assert {d["observed_at"] for d in ws["documents"]} == fetched
 
-    # open case: "Upload and rebase" is offered; do it with the injection file
-    assert "Upload and rebase" in page
-    r = ui(stack, "POST", f"{base}/documents", "ana", 303,
-           files=_files(made["injection"][0], "injection.pdf"), data={"rebase": "1"})  # fmt: skip
-    new_id = r.headers["location"].split("/cases/")[1].split("#")[0]
-    assert new_id != case_id and len(reader.calls) == 4
+    # open case: upload and rebase in one step, with the injection file
+    new = _upload(stack, case_id, made["injection"][0], "injection.pdf",
+                  params={"rebase": "true"}).json()  # fmt: skip
+    new_id = str(new["id"])
+    assert new_id != case_id and new["upload"]["rebase_required"] is True
+    assert len(reader.calls) == 4
     set_client(stack, NullClient)
 
     # the old case is closed, never saw the uploads; the new one is dated after all four
@@ -403,14 +404,14 @@ def test_upload_rebase_read_check_end_to_end(stack: Stack) -> None:  # noqa: F81
         old = conn.execute(
             "SELECT status, as_of FROM case_file WHERE id = %s", (case_id,)
         ).fetchone()
-        new = conn.execute(
+        new_row = conn.execute(
             "SELECT status, as_of FROM case_file WHERE id = %s", (new_id,)
         ).fetchone()
-        assert old and new and old[0] == "closed" and new[0] == "open"
+        assert old and new_row and old[0] == "closed" and new_row[0] == "open"
         ledger_now = load_ledger(conn, stack.w.borrower)
         assert len(ledger_now.statements) == 4
         assert ledger_now.known(old[1]).statements == ()  # time rule: invisible to the old case
-        assert len(ledger_now.known(new[1]).statements) == 4
+        assert len(ledger_now.known(new_row[1]).statements) == 4
         # extracts are observed when the files arrived, not when the reader ran
         pulls = dict(
             conn.execute(
@@ -424,12 +425,12 @@ def test_upload_rebase_read_check_end_to_end(stack: Stack) -> None:  # noqa: F81
             (new_id,),
         ).fetchone()
         assert calls == (4,)  # logged against the new case, one per document
-    page = ui(stack, "GET", f"/cases/{new_id}", "ana", 200).text
-    assert "arrived after the case date" not in page and "not used" not in page
-    assert page.count("included (arrived by the case date)") == 4 and "not read yet" not in page
+    ws = _workspace(stack, new_id)
+    assert ws["late_uploads"] == 0 and len(ws["documents"]) == 4
+    assert all(d["included"] and d["read"] for d in ws["documents"])
 
     # investigating the new case runs the baseline checks over the four statements
-    plan_and_investigate(stack, new_id)
+    stack.drive(new_id)
     with tenant_session(stack.w.url, stack.w.tenant) as conn:
         found = [
             f for f in load_findings(conn, case_id=new_id)
@@ -461,42 +462,30 @@ def test_upload_rebase_read_check_end_to_end(stack: Stack) -> None:  # noqa: F81
     assert len(found) == 2
 
     # a file uploaded after the new case was created needs another rebase (time rule again)
-    ui(
-        stack,
-        "POST",
-        f"/cases/{new_id}/documents",
-        "ana",
-        303,
-        files=_files(b"%PDF-1.4 x", "x.pdf"),
-    )
-    page = ui(stack, "GET", f"/cases/{new_id}", "ana", 200).text
-    assert "This document arrived after the case date" in page
+    _upload(stack, new_id, b"%PDF-1.4 x", "x.pdf")
+    assert _workspace(stack, new_id)["late_uploads"] == 1
 
 
 @db
 def test_upload_and_rebase_refused_once_review_work_exists(stack: Stack) -> None:  # noqa: F811
-    case_id = make_case(stack)
-    plan_and_investigate(stack, case_id)  # status: review
-    page = ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
-    assert "Upload and rebase" not in page and "<button>Upload</button>" in page
-    files = _files(b"%PDF-1.4 x", "late.pdf")
-    ui(stack, "POST", f"/cases/{case_id}/documents", "ana", 409, files=files, data={"rebase": "1"})
+    case_id = stack.new_case("ana")
+    stack.drive(case_id)  # status: review
+    _upload(stack, case_id, b"%PDF-1.4 x", "late.pdf", 409, params={"rebase": "true"})
     with tenant_session(stack.w.url, stack.w.tenant) as conn:  # the refusal wrote nothing
         assert conn.execute("SELECT count(*) FROM evidence_pull WHERE source = 'document_upload'"
                             ).fetchone() == (0,)  # fmt: skip
-    ui(stack, "POST", f"/cases/{case_id}/documents", "ana", 303, files=files)
-    page = ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
-    assert "This document arrived after the case date. Rebase the case to include it." in page
-    r = post(stack, f"/cases/{case_id}/rebase", "ana")
-    assert r.headers["location"].startswith("/cases/") and case_id not in r.headers["location"]
+    _upload(stack, case_id, b"%PDF-1.4 x", "late.pdf")
+    assert _workspace(stack, case_id)["late_uploads"] == 1
+    new = stack.call("POST", f"/api/cases/{case_id}/rebase", "ana", 201).json()
+    assert str(new["id"]) != case_id
 
 
 @db
 def test_unreadable_upload_does_not_block_rebase(stack: Stack) -> None:  # noqa: F811
-    case_id = make_case(stack)
-    ui(stack, "POST", f"/cases/{case_id}/documents", "ana", 303,
-       files={"file": ("notes.txt", b"just words", "text/plain")})  # fmt: skip
-    r = post(stack, f"/cases/{case_id}/rebase", "ana")
-    new_id = r.headers["location"].split("/cases/")[1].split("#")[0]
-    page = ui(stack, "GET", f"/cases/{new_id}", "ana", 200).text
-    assert "notes.txt" in page and "could not be read" in page
+    case_id = stack.new_case("ana")
+    stack.call("POST", f"/api/cases/{case_id}/documents", "ana", 201,
+               files={"file": ("notes.txt", b"just words", "text/plain")})  # fmt: skip
+    new = stack.call("POST", f"/api/cases/{case_id}/rebase", "ana", 201).json()
+    docs = _workspace(stack, str(new["id"]))["documents"]
+    assert [d["filename"] for d in docs] == ["notes.txt"]
+    assert docs[0]["read"] is False and docs[0]["read_error"]

@@ -28,23 +28,29 @@ from tangible.agent.loop import approve_plan as _approve_plan
 from tangible.agent.loop import investigate as _investigate
 from tangible.agent.loop import propose_plan as _propose_plan
 from tangible.agent.loop import send_back as _send_back
+from tangible.agent.progress import FEED
 from tangible.agent.prompts import load_prompt
 from tangible.agent.verify import verify_numbers
 from tangible.assessment import freeze, record_override, replay
 from tangible.assessment.freeze import review_states
 from tangible.db.cases import Case, create_case, get_case, set_case_status
 from tangible.db.findings import replaced_by
+from tangible.db.macro import load_macro_signals
 from tangible.db.session import Conn, tenant_session
+from tangible.db.signals import load_applications
 from tangible.documents.pending import ReadOutcome, pending_pulls, read_pending, source_ref_for
 from tangible.documents.upload import SOURCE as UPLOAD_SOURCE
 from tangible.documents.upload import display_name, store_upload
 from tangible.evidence import resolve as evidence_resolve
 from tangible.evidence.store import LocalEvidenceStore
 from tangible.ledger.evidence import EvidenceRef
+from tangible.ledger.types import Ledger, MacroSignal
+from tangible.metrics.systemic import actions_in_window, added_duty
 from tangible.policy import load_policy
 from tangible.web.provider import WebProvider
+from tangible.web.signals import signal_provider_from_env
 from tangible.workbench import audit
-from tangible.workbench.auth import Principal
+from tangible.workbench.auth import STAFF_ROLES, Principal
 from tangible.workbench.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -179,8 +185,15 @@ def _case_for_assessment(conn: Conn, assessment_id: str) -> str | None:
     return str(row[0]) if row and row[0] else None
 
 
+def _staff_only(p: Principal) -> None:
+    """Borrower accounts see their own onboarding only: never a case, finding or assessment."""
+    if p.role not in STAFF_ROLES:
+        raise Forbidden("not available to borrower accounts")
+
+
 def _readable_case(conn: Conn, p: Principal, case_id: str) -> Case:
     """Analysts: their assigned cases. Lender roles: only cases that have been signed."""
+    _staff_only(p)
     case = _load_case(conn, case_id)
     if p.role == "analyst":
         if case.assigned_analyst != p.subject:
@@ -226,6 +239,7 @@ def _case_row(case: Case) -> dict[str, Any]:
 
 
 def list_cases(conn: Conn, p: Principal) -> list[dict[str, Any]]:
+    _staff_only(p)
     cols = "c.id, c.borrower_id, b.name, c.as_of, c.status, c.assigned_analyst, c.previous_case_id"
     if p.role == "analyst":
         rows = conn.execute(
@@ -441,8 +455,102 @@ def get_case_detail(
             (case.id,),
         ).fetchone()
         out["last_investigation"] = _j({**stop[0], "at": stop[1]}) if stop else None
+        out["intangibles"] = _intangibles(conn, case.id)
+        out["systemic"] = systemic_exposure(conn, case)
         out.update(_run_notices(conn, case))
     audit.record(conn, p, "view", "case", case.id)
+    return out
+
+
+def _intangibles(conn: Conn, case_id: str) -> list[dict[str, Any]]:
+    """Each public source result the search scored for this case: best match score (computed by
+    entity_match, never the agent) and whether it is on file as a signal."""
+    rows = conn.execute(
+        "SELECT em.source, em.source_ref, max(em.score), "
+        "(array_agg(em.candidate ORDER BY em.score DESC))[1], "
+        "EXISTS (SELECT 1 FROM public_signal ps WHERE ps.case_id = em.case_id "
+        "        AND ps.source = em.source AND ps.source_ref = em.source_ref) "
+        "FROM entity_match em WHERE em.case_id = %s "
+        "GROUP BY em.case_id, em.source, em.source_ref ORDER BY max(em.score) DESC, em.source",
+        (case_id,),
+    ).fetchall()
+    out = []
+    for source, ref, score, cand, on_file in rows:
+        data = (cand or {}).get("data") or {}
+        out.append(
+            _j(
+                {
+                    "source": source,
+                    "source_ref": ref,
+                    "score": score,
+                    "on_file": on_file,
+                    "name": data.get("name") or data.get("domain") or ref,
+                    "address": data.get("address"),
+                    "rating": data.get("rating"),
+                    "review_count": data.get("review_count"),
+                    "status": data.get("business_status"),
+                    "registered_on": data.get("registered_on"),
+                }
+            )
+        )
+    return out
+
+
+def _light_ledger(conn: Conn, borrower_id: str, macro: tuple[MacroSignal, ...]) -> Ledger:
+    """Only what the systemic view reads: the application and the global macro rows."""
+    return Ledger(applications=load_applications(conn, borrower_id), macro_signals=macro)
+
+
+def systemic_exposure(conn: Conn, case: Case) -> dict[str, Any]:
+    """Stated imports, the tariff actions that count at the case date and what each line pays.
+    Computed by the same pure functions as the ms-4 metrics; display only."""
+    led = _light_ledger(conn, case.borrower_id, load_macro_signals(conn))
+    k = led.known(case.as_of)
+    mix = k.application.import_mix if k.application else None
+    lines = []
+    for x in mix or ():
+        rate, refs = added_duty(k, case.as_of, x)
+        lines.append({"hs_chapter": x.hs_chapter, "country": x.country,
+                      "share": x.share_of_cogs, "added_duty": rate, "actions": refs})  # fmt: skip
+    actions = [
+        {k2: a.get(k2) for k2 in ("document_number", "title", "publication_date", "effective_on",
+                                  "hs_chapters", "countries", "additional_duty")}
+        for a in actions_in_window(k, case.as_of)
+    ]  # fmt: skip
+    out: dict[str, Any] = _j({"stated": mix is not None, "lines": lines, "actions": actions})
+    return out
+
+
+def book_exposure(conn: Conn, cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """For each tariff action counting at some case's date: how many of these cases' borrowers
+    state imports it covers, and their share of the requested amounts. Display only."""
+    macro = load_macro_signals(conn)
+    if not macro or not cases:
+        return []
+    rows = conn.execute(
+        "SELECT id, borrower_id, as_of, loan_amount FROM case_file WHERE id = ANY(%s::uuid[]) "
+        "AND status <> 'closed'",
+        ([c["id"] for c in cases],),
+    ).fetchall()
+    total = sum((r[3] or Decimal(0) for r in rows), Decimal(0))
+    by_action: dict[str, dict[str, Any]] = {}
+    for case_id, borrower_id, as_of, amount in rows:
+        k = _light_ledger(conn, str(borrower_id), macro).known(as_of)
+        for a in actions_in_window(k, as_of):
+            ref = str(a["_ref"])
+            e = by_action.setdefault(
+                ref, {"document_number": ref, "title": a.get("title"),
+                      "effective_on": a.get("effective_on"), "cases": [], "amount": Decimal(0)},
+            )  # fmt: skip
+            mix = k.application.import_mix if k.application else None
+            if any(added_duty(k, as_of, x)[0] > 0 and ref in added_duty(k, as_of, x)[1]
+                   for x in mix or ()):  # fmt: skip
+                e["cases"].append(str(case_id))
+                e["amount"] += amount or Decimal(0)
+    out = []
+    for e in sorted(by_action.values(), key=lambda e: -e["amount"]):
+        share = (e["amount"] / total) if total else None
+        out.append(_j(e | {"n": len(e["cases"]), "share": share, "total": total}))
     return out
 
 
@@ -453,6 +561,8 @@ def case_status_view(conn: Conn, p: Principal, case_id: str) -> dict[str, Any]:
     out: dict[str, Any] = {"id": case.id, "status": case.status}
     if p.role == "analyst":
         out.update(_run_notices(conn, case))
+    if case.status == "investigating":
+        out["feed"] = FEED.recent(case.id)  # display only; see agent/progress.py
     return out
 
 
@@ -675,6 +785,7 @@ class InvestigationJob:
                         "document_client": self.client,
                         "evidence_store": store,
                         "web_provider": self.web_provider,
+                        "signal_provider": signal_provider_from_env(case.as_of),
                     }
                     if self.question is None:
                         _investigate(conn, case, policy, self.client, **common)
@@ -1030,6 +1141,7 @@ def _assessment_summary(conn: Conn, assessment_id: str) -> dict[str, Any]:
 
 
 def _readable_assessment(conn: Conn, p: Principal, assessment_id: str) -> None:
+    _staff_only(p)
     if conn.execute("SELECT 1 FROM assessment WHERE id = %s", (assessment_id,)).fetchone() is None:
         raise NotFound(f"assessment {assessment_id} not found")
     if p.role == "analyst":

@@ -11,6 +11,7 @@ from tangible.db.cases import Case
 from tangible.db.findings import insert_finding, load_findings
 from tangible.db.repo import load_ledger
 from tangible.db.session import Conn
+from tangible.ledger.types import Ledger
 from tangible.metrics import compute
 from tangible.metrics.sets import metric_set
 from tangible.policy import Policy
@@ -26,8 +27,44 @@ def run_baseline(conn: Conn, case: Case, policy: Policy) -> Baseline:
     if policy.parsed is None:
         raise ValueError("Policy has no parsed spec")
     ledger = load_ledger(conn, case.borrower_id)
-    input_hash = ledger_input_hash(ledger.known(case.as_of))
+    metric_ids = _metrics(conn, case, policy, ledger)
+    existing = [f for f in load_findings(conn, case_id=case.id) if f.origin == "rule"]
+    if existing:
+        return Baseline(metric_ids, [f.id for f in existing])
+    finding_ids = [
+        insert_finding(
+            conn, case.tenant_id, case.borrower_id, draft, origin="rule", case_id=case.id
+        )
+        for key, version in check_set(policy.parsed.check_set)
+        for draft in run_check(key, version, ledger, case.as_of)
+    ]
+    return Baseline(metric_ids, finding_ids)
 
+
+def refresh_baseline(conn: Conn, case: Case, policy: Policy) -> Baseline:
+    """After the case's known ledger changed (an investigation recorded public signals): metrics
+    for the new ledger state, and the rule findings the checks now produce that the case does not
+    already carry (same check and summary). Nothing earlier is touched."""
+    if policy.parsed is None:
+        raise ValueError("Policy has no parsed spec")
+    ledger = load_ledger(conn, case.borrower_id)
+    metric_ids = _metrics(conn, case, policy, ledger)
+    existing = [f for f in load_findings(conn, case_id=case.id) if f.origin == "rule"]
+    seen = {(f.draft.check_key, f.draft.summary) for f in existing}
+    new_ids = [
+        insert_finding(
+            conn, case.tenant_id, case.borrower_id, draft, origin="rule", case_id=case.id
+        )
+        for key, version in check_set(policy.parsed.check_set)
+        for draft in run_check(key, version, ledger, case.as_of)
+        if (draft.check_key, draft.summary) not in seen
+    ]
+    return Baseline(metric_ids, [f.id for f in existing] + new_ids)
+
+
+def _metrics(conn: Conn, case: Case, policy: Policy, ledger: Ledger) -> dict[tuple[str, int], str]:
+    assert policy.parsed is not None
+    input_hash = ledger_input_hash(ledger.known(case.as_of))
     metric_ids: dict[tuple[str, int], str] = {}
     for key, version in metric_set(policy.parsed.metric_set):
         value = compute(key, version, ledger, case.as_of)
@@ -44,15 +81,4 @@ def run_baseline(conn: Conn, case: Case, policy: Policy) -> Baseline:
         ).fetchone()
         assert row
         metric_ids[(key, version)] = str(row[0])
-
-    existing = [f for f in load_findings(conn, case_id=case.id) if f.origin == "rule"]
-    if existing:
-        return Baseline(metric_ids, [f.id for f in existing])
-    finding_ids = [
-        insert_finding(
-            conn, case.tenant_id, case.borrower_id, draft, origin="rule", case_id=case.id
-        )
-        for key, version in check_set(policy.parsed.check_set)
-        for draft in run_check(key, version, ledger, case.as_of)
-    ]
-    return Baseline(metric_ids, finding_ids)
+    return metric_ids

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from tangible.agent.llm import ModelConfigError
 from tangible.db.session import tenant_session
-from tangible.workbench import services
+from tangible.workbench import display, queries, services
 from tangible.workbench.deps import ConnDep, PrincipalDep, SettingsDep
 
 router = APIRouter(prefix="/api/cases")
@@ -49,7 +49,9 @@ class ResetInvestigation(BaseModel):
 
 @router.get("")
 def list_cases(conn: ConnDep, p: PrincipalDep) -> list[dict[str, Any]]:
-    return services.list_cases(conn, p)
+    cases = services.list_cases(conn, p)
+    signed = queries.assessment_by_case(conn, [c["id"] for c in cases])
+    return [{**c, "assessment": signed.get(c["id"])} for c in cases]
 
 
 @router.post("", status_code=201)
@@ -62,11 +64,59 @@ def create_case(body: CreateCase, conn: ConnDep, p: PrincipalDep) -> dict[str, A
     )  # fmt: skip
 
 
+@router.get("/exposure")
+def exposure(conn: ConnDep, p: PrincipalDep) -> list[dict[str, Any]]:
+    """Book exposure to tariff actions across the cases this caller can see. Display only."""
+    return services.book_exposure(conn, services.list_cases(conn, p))
+
+
+@router.get("/lookups")
+def lookups(conn: ConnDep, p: PrincipalDep) -> dict[str, Any]:
+    """Borrowers and analysts, for the new-case form (credit admin only)."""
+    if p.role != "credit_admin":
+        raise services.Forbidden("only a credit admin can create cases")
+    return {"borrowers": queries.borrowers(conn), "analysts": queries.analysts(conn)}
+
+
 @router.get("/{case_id}")
 def get_case(
     case_id: UUID, conn: ConnDep, p: PrincipalDep, settings: SettingsDep
 ) -> dict[str, Any]:
     return services.get_case_detail(conn, p, str(case_id), settings)
+
+
+@router.get("/{case_id}/workspace")
+def workspace(
+    case_id: UUID, conn: ConnDep, p: PrincipalDep, settings: SettingsDep
+) -> dict[str, Any]:
+    """Everything the case page shows in one read: the case detail plus the borrower's name,
+    the baseline metrics (with readable labels) and, for the analyst, the documents."""
+    d = services.get_case_detail(conn, p, str(case_id), settings)
+    docs = services.case_documents(conn, p, str(case_id)) if p.role == "analyst" else []
+    d["borrower"] = queries.borrower_name(conn, d["borrower_id"])
+    d["metrics"] = [
+        {
+            **m,
+            "label": display.metric_label(m["key"]),
+            "text": display.metric_text(m["value"], m["key"]),
+        }
+        for m in queries.case_metrics(conn, d["borrower_id"], d["as_of"])
+    ]
+    d["documents"] = docs
+    d["late_uploads"] = sum(1 for x in docs if not x["included"])
+    d["viewer_role"] = p.role
+    return d
+
+
+@router.get("/{case_id}/status")
+def status(case_id: UUID, conn: ConnDep, p: PrincipalDep) -> dict[str, Any]:
+    """The live run state, for polling (no audit row per poll)."""
+    return services.case_status_view(conn, p, str(case_id))
+
+
+@router.get("/{case_id}/documents")
+def documents(case_id: UUID, conn: ConnDep, p: PrincipalDep) -> list[dict[str, Any]]:
+    return services.case_documents(conn, p, str(case_id))
 
 
 @router.post("/{case_id}/assign")
@@ -165,8 +215,15 @@ def upload_document(
     p: PrincipalDep,
     settings: SettingsDep,
     file: UploadFile = File(...),  # noqa: B008
+    rebase: bool = False,
 ) -> dict[str, Any]:
     data = file.file.read(settings.max_upload_bytes + 1)
+    if rebase:
+        # One step for an 'open' or 'planning' case: store the file, then re-base so the new case
+        # (dated now) sees it. Returns the new case with the upload under "upload".
+        return services.upload_and_rebase(
+            conn, settings, p, str(case_id), file.filename or "", data
+        )
     return services.upload_document(conn, settings, p, str(case_id), file.filename or "", data)
 
 

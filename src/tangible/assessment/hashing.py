@@ -11,7 +11,7 @@ from tangible.ledger.types import Ledger
 
 _TABLES = (
     "orders", "refunds", "payouts", "bank_txns", "invoices", "inventory_snapshots",
-    "account_balances", "connections", "applications",
+    "account_balances", "connections", "applications", "public_signals", "macro_signals",
 )  # fmt: skip
 
 

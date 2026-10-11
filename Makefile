@@ -1,4 +1,4 @@
-.PHONY: install db-up db-down migrate test lint fmt typecheck check demo
+.PHONY: install db-up db-down migrate test lint fmt typecheck check demo web-install web-dev web-check
 
 install:
 	uv sync
@@ -27,11 +27,24 @@ typecheck:
 check: lint typecheck test
 
 # Fresh demo tenant on synthetic data dated to now (needs `make db-up` and
-# data/processed/uci_lines.csv). Prints the dev-login URL. No model calls.
+# data/processed/uci_lines.csv). Prints the web app's sign-in URL. No model calls.
 # Live run (a separate step; about $1.50 per staged case on Bedrock):
 #   TANGIBLE_MODEL_BACKEND=bedrock TANGIBLE_BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0 \
 #   TANGIBLE_BEDROCK_REGION=us-east-2 TANGIBLE_PRICE_IN_PER_MTOK=3.30 TANGIBLE_PRICE_OUT_PER_MTOK=16.50 \
 #   AWS_PROFILE=tangible uv run --with "botocore[crt]" tangible-demo seed --run-agent
-# Then serve it with the `workbench-demo` launch config (port 8001, same env, dev auth).
+# Then serve the API with the `workbench-demo` launch config (port 8001, same env, dev auth)
+# and the web app with TANGIBLE_API_URL=http://127.0.0.1:8001 make web-dev.
+# The agent runs on Strands Agents by default; TANGIBLE_AGENT_ENGINE=classic uses the old loop.
 demo: migrate
 	uv run tangible-demo seed
+
+# The web app (web/, Next.js). It proxies /api/* to the workbench (TANGIBLE_API_URL, default
+# http://127.0.0.1:8000); run the API with TANGIBLE_DEV_AUTH=1 for the dev sign-in picker.
+web-install:
+	npm --prefix web ci
+
+web-dev:
+	NEXT_PUBLIC_AUTH_MODE=$${NEXT_PUBLIC_AUTH_MODE:-dev} npm --prefix web run dev
+
+web-check:
+	cd web && npx next typegen && npx tsc --noEmit && npm run lint && NEXT_PUBLIC_AUTH_MODE=dev npm run build

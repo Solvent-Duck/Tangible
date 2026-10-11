@@ -39,11 +39,14 @@ from tangible.checks.sets import check_set
 from tangible.datasets.synthetic import DEFAULT_PROFILE, PLANTS, Profile, generate
 from tangible.db.repo import create_borrower, load_ledger
 from tangible.db.session import Conn, admin_connect, tenant_session
+from tangible.db.signals import insert_application
 from tangible.demo.shift import default_end_on, shift_lines
+from tangible.demo.us_intangibles import BY_KEY as US_BY_KEY
 from tangible.evidence.store import LocalEvidenceStore
 from tangible.ingest.synthetic_dir import ingest_synthetic_dir
 from tangible.ledger.csv_dir import read_ledger_dir
 from tangible.ledger.types import Ledger
+from tangible.macro import load_tariff_actions
 from tangible.policy import Policy, load_policy
 from tangible.workbench import services
 from tangible.workbench.auth import Principal, lookup_principal
@@ -61,8 +64,8 @@ USERS: Final[tuple[tuple[str, str, str], ...]] = (
     (ADMIN, "credit_admin", "Adam Reilly"),
     ("len", "lender_underwriter", "Len Marsh"),
 )
-DEFAULT_BASE_URL: Final = "http://127.0.0.1:8000"
-WORKBENCH_DEMO_URL: Final = "http://127.0.0.1:8001"  # the `workbench-demo` launch config
+DEFAULT_BASE_URL: Final = "http://localhost:3000"  # the web app (web/, `make web-dev`)
+WORKBENCH_DEMO_URL: Final = "http://127.0.0.1:8001"  # the `workbench-demo` launch config (API)
 
 # The check each plant must trip (tests/test_plants_matrix.py), asserted at seed time.
 EXPECTED_CHECK: Final[dict[str, str]] = {
@@ -121,6 +124,9 @@ class BorrowerSpec:
     stage: str  # with --run-agent: "open", "review" (investigated) or "signed"
     profile: Profile = DEFAULT_PROFILE  # who the borrower is in the data
     connections: tuple[ConnectionSpec, ...] | None = None  # None: healthy processor and bank
+    # A US identity from tangible.demo.us_intangibles: its application (name, address, phone,
+    # website) is written before the case opens, so the search team has someone to look up.
+    identity: str | None = None
 
 
 def connections_of(spec: BorrowerSpec) -> tuple[ConnectionSpec, ...]:
@@ -254,6 +260,35 @@ SPECS: Final[tuple[BorrowerSpec, ...]] = (
                 revoked_ago=timedelta(days=3),
             ),
         ),
+    ),
+    # Intangibles (US, public-web fixtures in web/demo_fixtures/us). Both stay open for a live
+    # run with TANGIBLE_SIGNAL_PROVIDER=fixtures: Juniper & Rye's regulars can lift it one band
+    # by the loyalty route; Northgate shares its name with a Spokane shop the search must refuse.
+    BorrowerSpec(
+        "Juniper & Rye Bakery LLC", 0, (), 106, Decimal("60000"), "open",
+        profile=Profile(
+            account_ref="US-JRB-001",
+            owner_account="MAYA LINDQVIST PERSONAL",
+            lender_name="CASCADE CAPITAL",
+            bank_name="WILLAMETTE COMMUNITY BANK",
+            landlord="DIVISION STREET HOLDINGS LLC",
+            supplier_names=_suppliers(1),
+        ),
+        identity="juniper_rye",
+    ),
+    BorrowerSpec(
+        "Northgate Phone Repair LLC", 1, (), 107, Decimal("35000"), "open",
+        profile=Profile(
+            account_ref="US-NPR-001",
+            processor_name="SQUARE PAYMENTS",
+            processor_source="square",
+            owner_account="RICO VALDEZ PERSONAL",
+            lender_name="SONORAN LENDING",
+            bank_name="SAGUARO STATE BANK",
+            landlord="ORACLE ROAD PLAZA LLC",
+            supplier_names=_suppliers(4),
+        ),
+        identity="northgate",
     ),
 )  # fmt: skip
 
@@ -527,6 +562,7 @@ def seed_demo(
     base_url: str = DEFAULT_BASE_URL,
     now: datetime | None = None,
     log: Callable[[str], None] = print,
+    link_subject: str | None = None,
 ) -> SeedSummary:
     if run_agent:
         # The model vendor is named only in agent/llm.py; here we just insist on a real backend
@@ -577,9 +613,20 @@ def seed_demo(
 
     # 2. tenant, users, borrowers (ingested), baseline checks on each story
     tenant_id = _create_tenant(url, tenant_name)
+    with admin_connect(url) as admin:
+        # Global and idempotent: the fictional demo tariff actions (docs/systemic-risk-plan.md).
+        if n := load_tariff_actions(admin):
+            log(f"loaded {n} demo tariff action(s) (fictional)")
     evidence = LocalEvidenceStore(store)
     with tenant_session(url, tenant_id) as conn:
         _create_users(conn, tenant_id)
+        if link_subject:
+            # A real sign-in (e.g. a Clerk user id) as this tenant's credit admin.
+            conn.execute(
+                "INSERT INTO app_user (tenant_id, subject, display_name, role) "
+                "VALUES (%s, %s, %s, 'credit_admin')",
+                (tenant_id, link_subject, "You (linked)"),
+            )
     staged: list[
         tuple[BorrowerSpec, str, date, date, int, datetime, list[tuple[str, str]], tuple[str, ...]]
     ] = []
@@ -604,6 +651,10 @@ def seed_demo(
     analyst_p = lookup_principal(url, tenant_id, ANALYST)
     seeded: list[SeededBorrower] = []
     for spec, borrower_id, first, last, offset, as_of, loud, described in staged:
+        if spec.identity is not None:
+            with tenant_session(url, tenant_id) as conn:
+                app = US_BY_KEY[spec.identity].application(as_of - timedelta(days=1))
+                insert_application(conn, tenant_id, borrower_id, app)
         with tenant_session(url, tenant_id) as conn:
             case = services.create_new_case(
                 conn, admin_p, borrower_id=borrower_id, as_of=as_of,
@@ -629,5 +680,5 @@ def seed_demo(
                 described,
             )  # fmt: skip
         )
-    login = f"{base_url}/dev/login?tenant={tenant_id}"
+    login = f"{base_url}/sign-in?tenant={tenant_id}"
     return SeedSummary(tenant_id, tenant_name, login, tuple(seeded), effective, requested)

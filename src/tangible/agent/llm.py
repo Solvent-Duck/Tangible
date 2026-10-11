@@ -16,6 +16,7 @@ Tool definitions are `{"name", "description", "input_schema"}` (JSON Schema). To
 
 import os
 from collections.abc import Mapping, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Protocol
@@ -346,6 +347,9 @@ class LoggedClient:
     cache_read_tokens: int = field(default=0, init=False)
     cache_write_tokens: int = field(default=0, init=False)
     cost: Decimal = field(default=Decimal(0), init=False)
+    # Held around the DB write and totals only, never the model call: parallel agents (one
+    # connection) wait for each other's inserts, not each other's inference.
+    lock: AbstractContextManager[Any] = field(default_factory=nullcontext, repr=False)
 
     @property
     def total_tokens(self) -> int:
@@ -365,6 +369,11 @@ class LoggedClient:
         tools: list[dict[str, Any]] | None = None,
     ) -> ModelResponse:
         resp = self.inner.complete(system=system, messages=messages, tools=tools)
+        with self.lock:
+            self._record(resp)
+        return resp
+
+    def _record(self, resp: ModelResponse) -> None:
         cost = cost_usd(resp, self.pricing)
         self.conn.execute(
             "INSERT INTO model_call (tenant_id, case_id, model_id, prompt_key, prompt_version, "
@@ -390,4 +399,3 @@ class LoggedClient:
         self.cache_read_tokens += resp.cache_read_tokens
         self.cache_write_tokens += resp.cache_write_tokens
         self.cost += cost
-        return resp
