@@ -16,6 +16,7 @@ from typing import Annotated, Any
 from urllib.parse import quote
 from uuid import UUID
 
+import psycopg
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -31,8 +32,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 from tangible.agent.llm import ModelConfigError
-from tangible.db.session import Conn, tenant_session
-from tangible.workbench import services
+from tangible.backtest import view as backtest_view
+from tangible.db.session import Conn, admin_connect, tenant_session
+from tangible.workbench import audit, services
 from tangible.workbench.auth import (
     TENANT_HEADER,
     USER_HEADER,
@@ -49,7 +51,7 @@ from tangible.workbench.oidc import (
     OidcRuntime,
     safe_next,
 )
-from tangible.workbench.ui import display, queries
+from tangible.workbench.ui import display, present, queries
 
 HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"
@@ -69,6 +71,9 @@ templates.env.globals["HTMX_URL"] = HTMX_URL
 templates.env.globals["HTMX_SRI"] = HTMX_SRI
 templates.env.filters["pretty"] = lambda v: json.dumps(v, indent=2, sort_keys=True, default=str)
 templates.env.filters.update(display.FILTERS)
+templates.env.filters["tablify"] = present.view
+templates.env.filters["args_view"] = present.args_view
+templates.env.filters["short_ref"] = present.short_ref
 
 router = APIRouter()
 
@@ -334,11 +339,41 @@ def _dev_only(request: Request) -> None:
         raise HTTPException(404)
 
 
+DEV_TENANT_LIMIT = 30
+
+
+def _dev_tenants(database_url: str) -> list[dict[str, Any]]:
+    """Tenants for the dev sign-in picker: id, name, created_at and a case count, nothing else.
+
+    This is a deliberate cross-tenant read, so it uses the admin connection (`tangible_app` is
+    confined to one tenant by RLS and cannot list tenants). It is safe only because it is
+    reachable solely from `dev_login`, which calls `_dev_only` first: with TANGIBLE_DEV_AUTH
+    unset the route is a 404 and this function never runs. The same setting that lets anyone
+    sign in as any user without a password is what exposes the list, so it reveals nothing
+    dev mode does not already allow. Never call it from a request path that lacks that gate.
+    Demo tenants (name starting "demo-") sort first, then newest first.
+    """
+    with admin_connect(database_url) as admin:
+        rows = admin.execute(
+            "SELECT t.id, t.name, t.created_at, "
+            "       (SELECT count(*) FROM case_file c WHERE c.tenant_id = t.id) "
+            "FROM tenant t "
+            "ORDER BY (t.name LIKE 'demo-%%') DESC, t.created_at DESC "
+            "LIMIT %s",
+            (DEV_TENANT_LIMIT,),
+        ).fetchall()
+    return [
+        {"id": str(i), "name": n, "created_at": at.strftime("%Y-%m-%d %H:%M"), "cases": c}
+        for i, n, at, c in rows
+    ]
+
+
 @router.get("/dev/login", response_class=HTMLResponse)
 def dev_login(request: Request, settings: SettingsDep, tenant: str = "") -> Response:
     _dev_only(request)
     tenant = tenant.strip()
     people: list[dict[str, str]] | None = None
+    tenants: list[dict[str, Any]] | None = None
     error = None
     if tenant:
         try:
@@ -347,7 +382,15 @@ def dev_login(request: Request, settings: SettingsDep, tenant: str = "") -> Resp
                 people = queries.users(conn)
         except ValueError:
             error = "That is not a valid tenant id (a UUID)."
-    return render(request, "login.html", None, tenant=tenant, people=people, error=error)
+    else:
+        try:
+            tenants = _dev_tenants(settings.database_url)
+        except psycopg.Error as e:
+            tenants = []
+            error = f"Could not list tenants ({type(e).__name__}); paste a tenant id instead."
+    return render(
+        request, "login.html", None, tenant=tenant, people=people, tenants=tenants, error=error
+    )
 
 
 @router.post("/dev/login")
@@ -710,6 +753,25 @@ def trace(
 ) -> Response:
     t = services.trace_finding(conn, settings, p, _id(case_id), _id(finding_id))
     return render(request, "trace.html", p, t=t, case_id=_id(case_id))
+
+
+# ---------------------------------------------------------------- backtest
+
+
+@router.get("/backtest", response_class=HTMLResponse)
+@guarded
+def backtest_page(request: Request, conn: UiConn, p: UiPrincipal) -> Response:
+    """Latest backtest report (synthetic cohort). Any signed-in role; the view is audited."""
+    loaded = backtest_view.load()
+    audit.record(
+        conn, p, "view", "backtest_report", None,
+        {"path": str(loaded.path), "found": loaded.data is not None},
+    )  # fmt: skip
+    summary = backtest_view.summarise(loaded.data) if loaded.data is not None else None
+    return render(
+        request, "backtest.html", p, s=summary, problem=loaded.problem, path=str(loaded.path),
+        hint=backtest_view.GENERATE_HINT,
+    )  # fmt: skip
 
 
 # ---------------------------------------------------------------- assessments

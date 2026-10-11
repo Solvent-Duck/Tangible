@@ -20,6 +20,7 @@
       {% if p %}
       {% set path = request.url.path %}
       <a href="/" {% if path == '/' or path.startswith('/cases/') and path != '/cases/new' or path.startswith('/assessments/') %}aria-current="page"{% endif %}>Cases</a>
+      <a href="/backtest" {% if path == '/backtest' %}aria-current="page"{% endif %}>Backtest</a>
       {% if p.role == 'credit_admin' %}<a href="/cases/new" {% if path == '/cases/new' %}aria-current="page"{% endif %}>New case</a>{% endif %}
       {% endif %}
     </nav>
