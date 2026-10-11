@@ -12,8 +12,11 @@ TANGIBLE_BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0 \
 TANGIBLE_BEDROCK_REGION=us-east-2 \
 TANGIBLE_PRICE_IN_PER_MTOK=3.30 TANGIBLE_PRICE_OUT_PER_MTOK=16.50 \
 TANGIBLE_WEB_PROVIDER=fixtures TANGIBLE_SIGNAL_PROVIDER=fixtures AWS_PROFILE=tangible \
-uv run --with "botocore[crt]" tangible-demo seed --run-agent
+uv run --with "botocore[crt]" tangible-demo seed --run-agent --lender-name "<lender>"
 ```
+
+`--lender-name` is the name invited businesses see in the invite email and onboarding. Without it
+they see the tenant id (`demo-20261011-0559`).
 
 The seed also loads the two fictional tariff actions and creates the onboarding pipeline (four
 invited US businesses, one of them submitted and ready for diligence). For the hosted demo the
@@ -24,6 +27,13 @@ The seed prints the tenant id. Then write the statement PDFs for the live upload
 
 ```bash
 uv run tangible-demo statements --tenant-id <tenant id> --borrower "Harbour & Pine Homeware Ltd" --out data/demo/statements
+```
+
+Generate the backtest report the Backtest tab reads (about 3 minutes; step 9 needs it):
+
+```bash
+uv run tangible-backtest synth --lines data/processed/uci_lines.csv --out data/backtest/cohort
+uv run tangible-backtest run --cohort data/backtest/cohort/cohort.csv --report data/backtest/report.md
 ```
 
 Start the `workbench-demo` launch config (the API on port 8001; Sonnet 4.5, web fixtures and
@@ -129,7 +139,7 @@ The onboarding pipeline (dashboard): Cedar & Sage Florist (invited), Bluebird Cy
 
 - The backtest is not evidence of predictive power. It runs on a synthetic cohort.
 - Web results are fixtures, not live lookups.
-- Bands and limits come from a starting-guess policy (0.3.0), not a calibrated one.
+- Bands and limits come from a starting-guess policy (0.5.0), not a calibrated one.
 
 
 ## Hosted demo
@@ -139,3 +149,5 @@ The onboarding pipeline (dashboard): Cedar & Sage Florist (invited), Bluebird Cy
   other its analyst with every case assigned (`--link-analyst`). Use two browser profiles.
 - Live agent runs need Bedrock credentials, which the hosted API does not have: the hosted demo
   shows the pre-run cases. Run live investigations locally.
+- The Backtest tab needs the report on the API's volume (see [deploy.md](deploy.md)); otherwise
+  it shows how to generate one.

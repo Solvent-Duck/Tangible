@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
   // A self-contained server for the container image (web/Dockerfile).
   output: "standalone",
   poweredByHeader: false,
+  // The local demo runs on `next dev`; the route badge would sit on the sidebar's Sign out.
+  // Compile and runtime errors still show.
+  devIndicators: false,
   async headers() {
     const base = [
       { key: "X-Content-Type-Options", value: "nosniff" },

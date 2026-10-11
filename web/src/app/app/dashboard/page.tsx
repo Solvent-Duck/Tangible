@@ -59,7 +59,7 @@ export default function DashboardPage() {
       {q.data && (
         <div className="space-y-6">
           <Kpis d={q.data} />
-          <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
+          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
             <Pipeline d={q.data} canInvite={canInvite} />
             <Activity d={q.data} />
           </div>
@@ -194,7 +194,7 @@ function Pipeline({ d, canInvite }: { d: Dashboard; canInvite: boolean }) {
                 <th className="px-3 py-2.5 font-medium">Stage</th>
                 <th className="px-3 py-2.5 font-medium">Requested items</th>
                 <th className="px-3 py-2.5 text-right font-medium">Loan</th>
-                <th className="px-3 py-2.5 font-medium">Last activity</th>
+                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Last activity</th>
                 <th className="w-10 px-3 py-2.5" />
               </tr>
             </thead>
@@ -237,7 +237,7 @@ function PipelineRow({ r }: { r: InviteSummary }) {
         </div>
       </td>
       <td className="tabular px-3 py-3 text-right">{money(r.loan_amount)}</td>
-      <td className="px-3 py-3 text-[12.5px] text-muted">{ago(r.last_activity)}</td>
+      <td className="px-3 py-3 text-[12.5px] whitespace-nowrap text-muted">{ago(r.last_activity)}</td>
       <td className="px-3 py-3">
         {r.case_id && r.case_status === "signed" ? (
           <Link href={`/app/diligence/${r.case_id}`} className="text-faint hover:text-brand" aria-label="Open case">
@@ -253,6 +253,8 @@ function PipelineRow({ r }: { r: InviteSummary }) {
   );
 }
 
+const ACTIVITY_SHOWN = 8;
+
 function Activity({ d }: { d: Dashboard }) {
   return (
     <Card className="h-fit">
@@ -261,11 +263,11 @@ function Activity({ d }: { d: Dashboard }) {
         <Empty title="Quiet so far" className="pt-2" />
       ) : (
         <ol className="space-y-0 px-5 pb-4">
-          {d.activity.slice(0, 14).map((a, i) => (
+          {d.activity.slice(0, ACTIVITY_SHOWN).map((a, i) => (
             <li key={i} className="relative flex gap-3 pb-4 last:pb-0">
               <span className="relative mt-1.5 flex flex-col items-center">
                 <span className={cn("size-2 rounded-full", a.kind === "submitted" ? "bg-review" : a.kind === "revoked" ? "bg-hold" : "bg-brand")} />
-                {i < Math.min(d.activity.length, 14) - 1 && <span className="absolute top-3 h-[calc(100%+4px)] w-px bg-line" />}
+                {i < Math.min(d.activity.length, ACTIVITY_SHOWN) - 1 && <span className="absolute top-3 h-[calc(100%+4px)] w-px bg-line" />}
               </span>
               <div className="min-w-0 text-[13px]">
                 <Link href={`/app/invites/${a.invite_id}`} className="font-medium hover:text-brand">

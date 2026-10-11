@@ -106,7 +106,7 @@ export default function NewInvitePage() {
         description="Choose what you want beyond standard financials. The business gets one secure link to connect and upload everything."
       />
       <form
-        className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_460px]"
+        className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_460px]"
         onSubmit={(e) => {
           e.preventDefault();
           send.mutate();

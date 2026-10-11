@@ -73,7 +73,7 @@ function Ended({ title, body }: { title: string; body: string }) {
 
 function Live({ p, token }: { p: InvitePreview; token: string }) {
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_420px] lg:items-start">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
       <section>
         <p className="text-[13px] font-medium text-brand">{p.lender_name} invited you</p>
         <h1 className="mt-2 font-display text-[38px] leading-[1.08] tracking-tight sm:text-[46px]">

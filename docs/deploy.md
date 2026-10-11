@@ -23,6 +23,7 @@ The hosted environment is the Railway project `tangible`, environment `productio
 | `TANGIBLE_WEB_PROVIDER`, `TANGIBLE_SIGNAL_PROVIDER` | `fixtures` (no live web lookups) |
 | `FORWARDED_ALLOW_IPS` | `*` (trust the platform proxy for client IPs; the rate limit uses them) |
 | `TANGIBLE_EVIDENCE_DIR` | Set by the image to `/data/evidence` |
+| `TANGIBLE_BACKTEST_REPORT` | `/data/backtest/report.json` (the Backtest tab; the image has no `data/`) |
 
 ### `web`
 
@@ -63,7 +64,13 @@ The hosted API has no Bedrock credentials, so live agent runs happen locally. Th
    COPYFILE_DISABLE=1 tar -C data/hosted-evidence -czf - . | railway ssh --service workbench -- sh -c 'mkdir -p /data/evidence && tar -C /data/evidence -xzf -'
    ```
 
-4. **Point the API at the new database:** set `TANGIBLE_DATABASE_URL` to the same URL with the database name changed. Setting it redeploys the API. Earlier databases stay as they were, so going back is a variable change.
+4. **Upload the backtest report** (generate it as in [demo-script.md](demo-script.md)):
+
+   ```bash
+   railway ssh --service workbench -- sh -c 'mkdir -p /data/backtest && cat > /data/backtest/report.json' < data/backtest/report.json
+   ```
+
+5. **Point the API at the new database:** set `TANGIBLE_DATABASE_URL` to the same URL with the database name changed. Setting it redeploys the API. Earlier databases stay as they were, so going back is a variable change.
 
 ## Checks after a deploy
 

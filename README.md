@@ -18,10 +18,18 @@ Run the workbench API locally (dev auth; otherwise it needs OIDC or Clerk settin
 TANGIBLE_DEV_AUTH=1 uv run tangible-workbench   # http://127.0.0.1:8000/api
 ```
 
-Seed a demo tenant (five synthetic borrowers dated to the last week, users ana/adm/len, open cases; prints the web app's sign-in URL). Serve the API with the `workbench-demo` launch config on port 8001:
+Seed a demo tenant (seven synthetic borrowers dated to the last week, an onboarding pipeline of four invited businesses, users ana/adm/len, open cases; prints the web app's sign-in URL). Serve the API with the `workbench-demo` launch config on port 8001. The seed builds its merchants from the UCI Online Retail II order lines ([dataset 502](https://archive.ics.uci.edu/dataset/502/online+retail+ii), CC BY 4.0), flattened once to `data/processed/uci_lines.csv`:
 
 ```bash
+uv run python -c 'from pathlib import Path; from tangible.datasets.uci_retail import xlsx_to_csv; xlsx_to_csv(Path("data/raw/online_retail_II.xlsx"), Path("data/processed/uci_lines.csv"))'
 make demo
+```
+
+The Backtest page reads `data/backtest/report.json` (or `TANGIBLE_BACKTEST_REPORT`). Generate it on the synthetic cohort (about 3 minutes):
+
+```bash
+uv run tangible-backtest synth --lines data/processed/uci_lines.csv --out data/backtest/cohort
+uv run tangible-backtest run --cohort data/backtest/cohort/cohort.csv --report data/backtest/report.md
 ```
 
 Run the web app (landing page, lender dashboard, invites, business onboarding, due diligence) against a dev-auth API. See [docs/onboarding.md](docs/onboarding.md) for the flow and Clerk setup, and [docs/deploy.md](docs/deploy.md) for hosting:
@@ -44,7 +52,7 @@ approve plan ─► Strands Graph "intangibles_search" (parallel)
 every agent:  ModelClientModel  → agent/llm.py (Bedrock Converse, prompt caching, cost per call)
               TangibleGuardrails → Strands hooks enforcing the invariants below
                          ▼
-ms-3 metrics (pure, versioned) ─► policy 0.4.0: knockout → bands → uplift (≤ 1 notch) → review cap
+ms-4 metrics (pure, versioned) ─► policy 0.5.0: knockout → bands → uplift (≤ 1 notch) → review cap → limit → stress
 ```
 
 - **Custom model provider.** `strands_engine/model.py` is a Strands `Model` over our own `ModelClient`, so every model call still goes through `agent/llm.py`: one `model_call` row with its cost per step, Bedrock prompt caching, and scripted clients that drive Strands offline in tests.
@@ -71,8 +79,8 @@ Tangible does not forecast tariffs. It loads enacted or announced actions, dated
 | `src/tangible/db/` | Plain SQL migrations 0001–0011 (schema, RLS, immutability triggers), tenant sessions, repositories. Applied by `tangible-migrate`. |
 | `src/tangible/ledger/` | Ledger row types and `known_as_of`, the single place the `observed_at` time rule lives. |
 | `src/tangible/ingest/`, `src/tangible/datasets/` | Load data into the ledger (`tangible-ingest`); UCI Online Retail loader and a synthetic generator with planted problems. |
-| `src/tangible/metrics/` | 23 versioned pure metrics (health and momentum), pinned as set `ms-2`. |
-| `src/tangible/checks/` | 17 versioned integrity checks (reconciliation, completeness, tampering, documents), pinned as set `cs-4` (`books_vs_processor` v2 waits for settlement); they emit findings. |
+| `src/tangible/metrics/` | 39 versioned pure metrics (health, momentum, intangibles, systemic), latest set `ms-4`. |
+| `src/tangible/checks/` | 22 versioned integrity checks (reconciliation, completeness, tampering, documents, public listings, tariffs), latest set `cs-6` (`books_vs_processor` v2 waits for settlement); they emit findings. |
 | `src/tangible/policy/` | Policy loader (version + hash), typed schema, evaluator (band and limit) and review state. |
 | `src/tangible/assessment/` | Baseline, freeze and replay of an assessment (`tangible-replay`). |
 | `src/tangible/agent/strands_engine/` | The Strands Agents engine: model provider, guardrail hooks, the search-team Graph. |

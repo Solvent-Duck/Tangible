@@ -155,7 +155,7 @@ function Wizard() {
   const go = (n: number) => setStep(STEPS[Math.max(0, Math.min(STEPS.length - 1, n))].id);
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[260px_1fr]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="lg:sticky lg:top-8 lg:self-start">
         <p className="text-[13px] text-muted">{s.lender_name} · {s.loan_amount ? money(s.loan_amount) : "loan application"}</p>
         <h1 className="mt-1 text-[22px] leading-tight font-semibold tracking-tight">{s.business_name}</h1>
