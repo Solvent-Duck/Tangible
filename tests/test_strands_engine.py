@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import threading
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,10 @@ from tangible.agent.strands_engine.model import ModelClientModel, to_events, to_
 from tangible.agent.tools import open_context, tool_definitions
 from tangible.db.findings import load_findings
 from tangible.db.session import Conn, tenant_session
+from tangible.db.signals import insert_application
+from tangible.demo.us_intangibles import BY_KEY
 from tangible.policy import load_policy
+from tangible.web.signals import demo_signal_provider
 from test_agent_loop import FREE, FnClient, approved_case, call, last_call_id, run, say
 from test_assessment import POLICY_PATH, World, datasets, make_world  # noqa: F401
 from test_assessment import hidden as hidden_world  # noqa: F401
@@ -271,3 +275,101 @@ def test_search_team_runs_before_the_lead_and_reports_are_untrusted(
             assert f'<agent_report agent="{k}_agent" untrusted="true">{k} report' in first
         assert first.count("</agent_report>") == 3  # a report cannot close its own tag
         assert logged.calls == 4  # every agent's model calls are logged with cost
+
+
+def _last_output(messages: list[dict[str, Any]]) -> tuple[str, Any]:
+    m = re.fullmatch(
+        r'<tool_output call_id="([^"]+)" tool="[^"]+" untrusted="true">(.*)</tool_output>',
+        messages[-1]["content"][0]["content"],
+        re.S,
+    )
+    assert m, messages[-1]
+    return m.group(1), json.loads(m.group(2))
+
+
+class Team:
+    """Per-agent scripted steps (functions of that agent's messages); agents run in parallel."""
+
+    def __init__(self, steps: dict[str, list[Any]]) -> None:
+        self.steps = {k: list(v) for k, v in steps.items()}
+        self.lock = threading.Lock()
+        self.seen: dict[str, list[list[dict[str, Any]]]] = {}
+
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> ModelResponse:
+        who = next((k for k in self.steps if f"the {k} agent" in system), "lead")
+        with self.lock:
+            self.seen.setdefault(who, []).append(messages)
+            step = self.steps[who].pop(0)
+        return step(messages)
+
+
+@pytest.mark.db
+def test_search_team_records_true_listings_and_the_decoy_is_refused(
+    hw: World, tmp_path: Path
+) -> None:
+    def first_candidate(city: str) -> Any:
+        def step(m: list[dict[str, Any]]) -> ModelResponse:
+            cid, out = _last_output(m)
+            ref = next(c["source_ref"] for c in out["candidates"] if city in c["data"]["address"])
+            return call("match_entity", {"source_call_id": cid, "source_ref": ref}, f"m-{city}")
+
+        return step
+
+    def record(m: list[dict[str, Any]]) -> ModelResponse:
+        _, out = _last_output(m)
+        return call("record_signal", {"match_id": out["match_id"]}, "r")
+
+    with tenant_session(hw.url, hw.tenant) as conn:
+        case = approved_case(conn, hw)
+        northgate = BY_KEY["northgate"]
+        insert_application(
+            conn,
+            case.tenant_id,
+            case.borrower_id,
+            northgate.application(case.as_of - timedelta(days=1)),
+        )
+        search = lambda m: call(  # noqa: E731
+            "place_search",
+            {"source": "google_places", "query": "Northgate Phone Repair Tucson"},
+            "p",
+        )
+        client = Team(
+            {
+                "reputation": [
+                    search, first_candidate("Spokane"), record,  # the decoy: refused
+                    lambda m: say("Spokane listing refused (0.4)."),
+                ],
+                "presence": [
+                    search, first_candidate("Tucson"), record,  # the true listing: recorded
+                    lambda m: say("Tucson listing recorded."),
+                ],
+                "loyalty": [lambda m: say("Nothing to add.")],
+                "lead": [lambda m: say("done")],
+            }
+        )  # fmt: skip
+        res = run(
+            conn, case, client, tmp_path, engine="strands",
+            signal_provider=demo_signal_provider(clock=lambda: case.as_of),
+        )  # fmt: skip
+        assert res.stop_reason == "end_turn" and res.steps == 10
+
+        brief = client.seen["presence"][0][0]["content"]
+        assert "Legal name: Northgate Phone Repair LLC" in brief and "Tucson" in brief
+        rows = conn.execute(
+            "SELECT tool, error FROM tool_call WHERE case_id = %s AND tool = 'record_signal' "
+            "ORDER BY started_at",
+            (case.id,),
+        ).fetchall()
+        assert sorted(e is None for _, e in rows) == [False, True]  # one refused, one recorded
+        assert conn.execute(
+            "SELECT count(*) FROM public_signal WHERE borrower_id = %s", (case.borrower_id,)
+        ).fetchone() == (1,)
+        lead_first = client.seen["lead"][0][0]["content"]
+        assert '<agent_report agent="reputation_agent" untrusted="true">' in lead_first
+        assert "Tucson listing recorded." in lead_first

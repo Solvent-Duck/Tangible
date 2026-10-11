@@ -12,6 +12,7 @@ storage limits before a live adapter is written (see the plan's open questions).
 
 import hashlib
 import json
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -276,3 +277,14 @@ def demo_signal_provider(
     if clock is not None:
         p.clock = clock
     return p
+
+
+def signal_provider_from_env(as_of: datetime | None = None) -> FixtureSignalProvider | None:
+    """TANGIBLE_SIGNAL_PROVIDER = none (default) | fixtures. Fixture pulls are stamped at the
+    case's as_of (when given), so a demo case's search counts for that case."""
+    name = os.environ.get("TANGIBLE_SIGNAL_PROVIDER", "").strip().lower() or "none"
+    if name == "none":
+        return None
+    if name == "fixtures":
+        return demo_signal_provider(clock=(lambda: as_of) if as_of is not None else None)
+    raise ValueError(f"unknown TANGIBLE_SIGNAL_PROVIDER {name!r} (use none or fixtures)")

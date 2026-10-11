@@ -325,6 +325,30 @@ def engine_from_env() -> str:
     return name
 
 
+def search_brief(ctx: ToolContext, borrower_name: str | None) -> str:
+    """The public-records search task: who the business is, from the application (trusted)."""
+    app = ctx.known.application
+    fields = [
+        ("Legal name", app.legal_name if app else None),
+        ("Trading as", app.dba if app else None),
+        ("Address", ", ".join(x for x in (app.address, app.state) if x) if app else None),
+        ("Phone", app.phone if app else None),
+        ("Website", app.website if app else None),
+        ("NAICS industry code", app.naics if app else None),
+    ]
+    lines = [f"- {k}: {v}" for k, v in fields if v]
+    if not lines and borrower_name:
+        lines = [f"- Name on file: {borrower_name}"]
+    return "\n".join(
+        [
+            "Business to look up (trusted, from the loan application on file):",
+            *(lines or ["- (no identity on file)"]),
+            f"Case date: {ctx.case.as_of.date().isoformat()}.",
+            "Search the public sources for this business and record what you can confirm.",
+        ]
+    )
+
+
 def wrap_up_notice(case: Case, steps: int, stalled: int, notified: set[str]) -> str | None:
     """The trusted wrap-up nudge, at most once per kind. Shared by both engines."""
     why = None
@@ -413,6 +437,7 @@ def investigate(
     document_client: ModelClient | None = None,
     evidence_store: EvidenceStore | None = None,
     web_provider: Any = None,
+    signal_provider: Any = None,
     engine: str | None = None,
 ) -> InvestigationResult:
     engine = engine or engine_from_env()
@@ -430,6 +455,7 @@ def investigate(
         document_client=document_client,
         evidence_store=evidence_store,
         web_provider=web_provider,
+        signal_provider=signal_provider,
     )  # fmt: skip
     system, prompts = _system_text("system", "investigate")
     summary = _baseline_summary(conn, case, list(baseline.metric_ids.values()))
@@ -441,6 +467,7 @@ def investigate(
         system,
         tool_definitions(ctx),
         _first_message(plan, summary, reference, question, _borrower_name(conn, case)),
+        search_brief(ctx, _borrower_name(conn, case)) if signal_provider is not None else "",
     )
     set_case_status(conn, case.id, "investigating")
 
@@ -496,6 +523,7 @@ def send_back(
     document_client: ModelClient | None = None,
     evidence_store: EvidenceStore | None = None,
     web_provider: Any = None,
+    signal_provider: Any = None,
     engine: str | None = None,
 ) -> InvestigationResult:
     conn.execute(
@@ -507,5 +535,5 @@ def send_back(
         conn, case, policy, client,
         pricing=pricing, workdir=workdir, verifier=verifier, question=question,
         document_client=document_client, evidence_store=evidence_store,
-        web_provider=web_provider, engine=engine,
+        web_provider=web_provider, signal_provider=signal_provider, engine=engine,
     )  # fmt: skip

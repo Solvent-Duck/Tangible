@@ -44,6 +44,7 @@ from tangible.evidence.store import LocalEvidenceStore
 from tangible.ledger.evidence import EvidenceRef
 from tangible.policy import load_policy
 from tangible.web.provider import WebProvider
+from tangible.web.signals import signal_provider_from_env
 from tangible.workbench import audit
 from tangible.workbench.auth import Principal
 from tangible.workbench.settings import Settings
@@ -678,6 +679,7 @@ class InvestigationJob:
                         "document_client": self.client,
                         "evidence_store": store,
                         "web_provider": self.web_provider,
+                        "signal_provider": signal_provider_from_env(case.as_of),
                     }
                     if self.question is None:
                         _investigate(conn, case, policy, self.client, **common)
