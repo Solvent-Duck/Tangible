@@ -230,8 +230,9 @@ def guarded(fn: Callable[..., Any]) -> Callable[..., Any]:
             if conn is not None:
                 conn.rollback()
             status, title = _ERRORS.get(type(e), (503, "Model not available"))
+            message = str(e) if type(e) in _ERRORS else services.describe_error(e)
             return render(
-                kw["request"], "error.html", kw.get("p"), status, title=title, message=str(e)
+                kw["request"], "error.html", kw.get("p"), status, title=title, message=message
             )
 
     return wrapper
@@ -453,8 +454,10 @@ def _latest_plan(detail: dict[str, Any]) -> dict[str, Any] | None:
 
 @router.get("/cases/{case_id}", response_class=HTMLResponse)
 @guarded
-def case_page(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) -> Response:
-    d = services.get_case_detail(conn, p, _id(case_id))
+def case_page(
+    request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal, settings: SettingsDep
+) -> Response:
+    d = services.get_case_detail(conn, p, _id(case_id), settings)
     groups = [(sev, [f for f in d["findings"] if f["severity"] == sev]) for sev in SEVERITY_ORDER]
     return render(
         request, "case.html", p, c=d,
@@ -468,13 +471,11 @@ def case_page(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) -> 
 @router.get("/cases/{case_id}/status", response_class=HTMLResponse)
 @guarded
 def case_status(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) -> Response:
-    # list_cases applies the same role filtering as the case page, without a per-poll audit row.
-    row = next((c for c in services.list_cases(conn, p) if c["id"] == _id(case_id)), None)
-    if row is None:
-        raise services.NotFound(f"case {case_id} not found")
+    # Same access as the case page, without a per-poll audit row.
+    row = services.case_status_view(conn, p, _id(case_id))
     if not is_htmx(request):
         return redirect(f"/cases/{case_id}")
-    resp = render(request, "_status.html", p, c=row)
+    resp = render(request, "_status.html", p, c=row, is_analyst=p.role == "analyst")
     if row["status"] != "investigating":
         resp.headers["HX-Refresh"] = "true"  # finished: reload for findings and metrics
     return resp
@@ -529,6 +530,39 @@ def investigate(
         job = services.start_investigation(conn, settings, p, _id(case_id))
     background.add_task(job.run)
     return redirect(f"/cases/{case_id}", "Investigation started.")
+
+
+@router.post("/cases/reset")
+@guarded
+def reset_by_id(
+    request: Request,
+    conn: UiConn,
+    p: UiPrincipal,
+    case_id: Annotated[str, Form()] = "",
+    reason: Annotated[str, Form()] = "",
+) -> Response:
+    """The credit admin's way in: an unsigned case has no page for them, so it is reset by id."""
+    try:
+        cid = str(uuid.UUID(case_id.strip()))
+    except ValueError:
+        raise services.Invalid("that is not a case id") from None
+    res = services.reset_stuck_investigation(conn, p, cid, reason)
+    return redirect("/cases/new", f"Investigation reset; case {cid} is back to '{res['status']}'.")
+
+
+@router.post("/cases/{case_id}/reset")
+@guarded
+def reset(
+    request: Request,
+    case_id: UUID,
+    conn: UiConn,
+    p: UiPrincipal,
+    reason: Annotated[str, Form()] = "",
+) -> Response:
+    res = services.reset_stuck_investigation(conn, p, _id(case_id), reason)
+    return redirect(
+        f"/cases/{case_id}", f"Investigation reset; the case is back to '{res['status']}'."
+    )
 
 
 @router.post("/cases/{case_id}/send-back")

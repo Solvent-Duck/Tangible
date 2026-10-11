@@ -18,11 +18,17 @@ Run the analyst workbench locally (dev login; production requires OIDC settings 
 TANGIBLE_DEV_AUTH=1 uv run tangible-workbench   # http://127.0.0.1:8000
 ```
 
+Seed a demo tenant (five synthetic borrowers dated to the last week, users ana/adm/len, open cases; prints the dev-login URL). Serve it with the `workbench-demo` launch config on port 8001:
+
+```bash
+make demo
+```
+
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `src/tangible/db/` | Plain SQL migrations 0001–0006 (schema, RLS, immutability triggers), tenant sessions, repositories. Applied by `tangible-migrate`. |
+| `src/tangible/db/` | Plain SQL migrations 0001–0007 (schema, RLS, immutability triggers), tenant sessions, repositories. Applied by `tangible-migrate`. |
 | `src/tangible/ledger/` | Ledger row types and `known_as_of`, the single place the `observed_at` time rule lives. |
 | `src/tangible/ingest/`, `src/tangible/datasets/` | Load data into the ledger (`tangible-ingest`); UCI Online Retail loader and a synthetic generator with planted problems. |
 | `src/tangible/metrics/` | 23 versioned pure metrics (health and momentum), pinned as set `ms-2`. |

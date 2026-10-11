@@ -58,3 +58,83 @@ def test_nested_results() -> None:
 
 def test_booleans_not_numbers() -> None:
     assert not verify_numbers("Count 1.", [{"flag": True}]).ok
+
+
+def test_window_phrases_ignored() -> None:
+    for text in (
+        "in the last 90 days",
+        "latest weekly 30-day revenue",
+        "a 13-week slope",
+        "outside the prior 25 weeks",
+        "over 12 months",
+        "trailing 90d revenue",
+        "trailing 13w average",
+        "within 5 business days",
+        "the last 2 quarters and 1 yr and 3 wks and 6 mo and 2 years",
+        "A 30 Day window",
+    ):
+        r = verify_numbers(text, [])
+        assert r.ok and r.checked == 0, text
+
+
+def test_sigma_phrases_ignored() -> None:
+    for text in ("outside mean +/- 2 sigma", "a 3σ move", "beyond 2 σ", "2.5 standard deviations"):
+        r = verify_numbers(text, [])
+        assert r.ok and r.checked == 0, text
+
+
+def test_identifier_tokens_ignored() -> None:
+    text = "change_30v30 = 0.5; slope_13w, revenue_yoy_90d and revenue_break_26w are set"
+    r = verify_numbers(text, [{"x": 0.5}])
+    assert r.ok and r.checked == 1  # only the 0.5 is a claim
+
+
+def test_mixed_window_and_claim() -> None:
+    r = verify_numbers("Over the last 90 days revenue fell 7.0% (30-day basis).", [{"d": -0.07}])
+    assert r.ok and r.checked == 1
+
+
+def test_sign_tolerance() -> None:
+    pool = [{"change": -0.165}]
+    assert verify_numbers("declining (change_30v30 = -16.5%)", pool).ok
+    assert verify_numbers("declining 16.5%", pool).ok
+    assert verify_numbers("Slope was -0.38.", [{"s": 0.3839}]).ok
+    assert verify_numbers("Slope was 0.38.", [{"s": -0.3839}]).ok
+    assert verify_numbers("There were 3 gaps.", [{"n": -3}]).ok
+    assert not verify_numbers("declining 16.6%", pool).ok
+
+
+def test_counts_after_non_unit_words_still_checked() -> None:
+    r = verify_numbers("There were 21 debits and 305 SKUs.", [{"n": 5}])
+    assert not r.ok and r.unmatched == ("21", "305") and r.checked == 2
+    assert verify_numbers("There were 21 debits and 305 SKUs.", [{"a": 21, "b": 305}]).ok
+
+
+def test_derived_percent_flagged_alone() -> None:
+    r = verify_numbers("26.0% (41278.16 of 158975.11)", [{"a": 41278.16, "b": 158975.11}])
+    assert not r.ok and r.unmatched == ("26.0%",) and r.checked == 3
+
+
+def test_full_precision_claim_against_large_values_does_not_raise() -> None:
+    text = "aged_stock_share: 0.8024050297982365579989458011 of stock worth 28,800.00"
+    pool = [{"aged_stock_share": "0.8024050297982365579989458011", "value": "28800.00"}]
+    assert verify_numbers(text, pool).ok
+    assert verify_numbers(text, [{"value": "123456789012.50"}]).unmatched == (
+        "0.8024050297982365579989458011",
+        "28,800.00",
+    )
+
+
+def test_whole_currency_amount_matches_rounded_value_but_bare_count_is_exact() -> None:
+    pool = [{"revenue": "136831.92", "orders": 199}]
+    assert verify_numbers("revenue of GBP 136,832 and £136,832", pool).ok
+    assert verify_numbers("199 orders", pool).ok
+    assert verify_numbers("136832 orders", pool).unmatched == ("136832",)
+
+
+def test_hyphenated_reference_ids_are_not_claims() -> None:
+    assert verify_numbers("invoice INV-574941 and PO-1182", []).ok
+
+
+def test_window_ranges_are_not_claims() -> None:
+    assert verify_numbers("lag 31-60 days ago and 61–90 days ago", []).ok

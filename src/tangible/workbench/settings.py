@@ -77,7 +77,7 @@ class Settings:
         env = os.environ
         settings = cls(
             database_url=database_url(),
-            evidence_dir=Path(env.get("TANGIBLE_EVIDENCE_DIR", "var/evidence")),
+            evidence_dir=Path(env.get("TANGIBLE_EVIDENCE_DIR", ".evidence")),
             policy_path=Path(env.get("TANGIBLE_POLICY_PATH", str(_DEFAULT_POLICY))),
             web_provider=env.get("TANGIBLE_WEB_PROVIDER") or "none",
             web_fixtures=Path(p) if (p := env.get("TANGIBLE_WEB_FIXTURES")) else None,

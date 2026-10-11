@@ -9,6 +9,7 @@
     | review state: <strong>{{ f.review_state }}</strong>
     | <a href="/cases/{{ c.id }}/findings/{{ f.id }}/trace">trace to source</a>
   </p>
+  {% include "_unmatched.html" %}
   {% if f.actions %}
   <details><summary>Review history ({{ f.actions | length }})</summary>
     <ul>{% for a in f.actions %}<li>{{ a.at }} - {{ a.by }}: {{ a.action }} - {{ a.reason }}</li>{% endfor %}</ul>
