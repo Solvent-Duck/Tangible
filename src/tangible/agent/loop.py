@@ -300,6 +300,9 @@ class RunSetup:
     system: str
     tools: list[dict[str, Any]]
     first_message: str
+    # Who the business is (trusted, from the case). Set when public-records search is available;
+    # the Strands engine then runs the search team before the lead investigator.
+    search_brief: str = ""
 
 
 @dataclass(frozen=True)

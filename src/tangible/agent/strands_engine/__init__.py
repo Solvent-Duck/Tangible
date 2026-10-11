@@ -10,6 +10,7 @@ from tangible.agent.loop import WRAP_UP_MAX_CHARS, RunOutcome, RunSetup
 from tangible.agent.progress import FEED
 from tangible.agent.strands_engine.guardrails import RunState, TangibleGuardrails, tangible_tools
 from tangible.agent.strands_engine.model import ModelClientModel
+from tangible.agent.strands_engine.team import reports_block, run_search_team
 
 LEAD = "lead_investigator"
 
@@ -44,9 +45,14 @@ def run_strands(setup: RunSetup) -> RunOutcome:
     state = RunState(setup)
     setup.logged.lock = state.lock
     FEED.start(setup.case.id)
+    first = setup.first_message
+    reports: dict[str, str] = {}
+    if setup.search_brief:
+        reports = run_search_team(state)
+        first = f"{first}\n\n{reports_block(reports)}"
     lead = build_agent(state, LEAD, setup.system)
     state.note(LEAD, "start", "started the investigation")
-    result = lead(setup.first_message)
+    result = lead(first)
     model = lead.model
     model_id = model.model_id if isinstance(model, ModelClientModel) else ""
     wrap_up = ""
@@ -57,5 +63,5 @@ def run_strands(setup: RunSetup) -> RunOutcome:
         state.steps,
         model_id,
         wrap_up[:WRAP_UP_MAX_CHARS],
-        {"agents": dict(state.agent_steps)},
+        {"agents": dict(state.agent_steps)} | ({"search_team": sorted(reports)} if reports else {}),
     )
