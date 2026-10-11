@@ -11,6 +11,7 @@ from strands.tools.executors import SequentialToolExecutor
 
 from tangible.agent.llm import LoggedClient, ModelResponse, ScriptedClient
 from tangible.agent.loop import RunSetup
+from tangible.agent.progress import FEED
 from tangible.agent.prompts import load_prompt
 from tangible.agent.strands_engine import build_agent
 from tangible.agent.strands_engine.guardrails import RunState
@@ -175,6 +176,10 @@ def test_strands_and_classic_engines_are_equivalent(hw: World, tmp_path: Path) -
             )
     assert out["strands"] == out["classic"]
     assert "unknown tool 'no_such_tool'" in out["strands"][1][1]  # invented tool: logged
+    feed = [(x.agent, x.kind, x.text) for x in FEED.recent(case.id, 50)]
+    assert feed[0] == ("lead_investigator", "start", "started the investigation")
+    assert ("lead_investigator", "error", "no_such_tool") in feed
+    assert ("lead_investigator", "finding", "recorded; verified") in feed
 
 
 @pytest.mark.db
@@ -210,4 +215,4 @@ def test_out_of_scope_tool_is_cancelled_without_running(hw: World, tmp_path: Pat
         assert _tool_rows(conn, case.id) == []  # record_finding never ran
         result = client.calls[1].messages[-1]["content"][0]
         assert "not available to scout" in result["content"] and result["is_error"]
-        assert [e["kind"] for e in state.events] == ["blocked", "tool"]
+        assert [e["kind"] for e in state.events] == ["blocked", "error"]

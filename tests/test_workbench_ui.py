@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tangible.agent.llm import ModelConfigError, ModelResponse, NullClient, Pricing, ScriptedClient
+from tangible.agent.progress import FEED
 from tangible.checks.registry import FindingDraft
 from tangible.db.cases import set_case_status
 from tangible.db.findings import insert_finding
@@ -236,9 +237,15 @@ def test_htmx_status_fragment_and_inline_review(stack: Stack) -> None:  # noqa: 
 
     with tenant_session(stack.w.url, stack.w.tenant) as conn:
         set_case_status(conn, case_id, "investigating")
+    FEED.start(case_id)
+    FEED.add(case_id, "lead_investigator", "tool", "query_ledger")
+    FEED.add(case_id, "presence_agent", "blocked", "blocked record_finding")
     r = stack.http.get(f"{base}/status", headers=hx)
     assert r.status_code == 200 and "<html" not in r.text
     assert 'hx-trigger="every 2s"' in r.text and "investigating" in r.text
+    # the live team feed (display only) rides on the same poll
+    assert "Lead investigator" in r.text and "query_ledger" in r.text
+    assert "guardrail blocked record_finding" in r.text
     assert "HX-Refresh" not in r.headers
     # without htmx the endpoint just redirects to the page
     assert ui(stack, "GET", f"{base}/status", "ana", 303).headers["location"] == base

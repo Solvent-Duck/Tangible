@@ -18,6 +18,13 @@
     {% if live %}<span class="spinner" aria-hidden="true"></span>{% endif %}
     <span>Status: <strong>{{ c.status }}</strong>{% if live %} - the agent is working; this updates automatically (reload to refresh without JavaScript).{% elif c.status == 'closed' %} - this case was re-based or closed; it is kept as a record.{% endif %}</span>
   </p>
+  {% if live and c.feed %}
+  <ol class="team-feed" aria-label="What the agents are doing">
+    {% for line in c.feed %}
+    <li class="feed-{{ line.kind }}"><span class="feed-agent">{{ line.agent | replace('_', ' ') | capitalize }}</span> <span class="feed-text">{% if line.kind in ('tool', 'error') %}{{ line.text }}{% if line.kind == 'error' %} (error){% endif %}{% elif line.kind == 'blocked' %}guardrail {{ line.text }}{% elif line.kind == 'finding' %}finding {{ line.text }}{% elif line.kind == 'stop' %}stopped: {{ line.text }}{% else %}{{ line.text }}{% endif %}</span></li>
+    {% endfor %}
+  </ol>
+  {% endif %}
   {% if (c.status == 'investigating' and stuck) or c.last_failure or c.last_reset %}
   <div class="status-notices">
   {% if c.status == 'investigating' and stuck %}

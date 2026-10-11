@@ -7,6 +7,7 @@ from strands.agent.conversation_manager import NullConversationManager
 from strands.tools.executors import SequentialToolExecutor
 
 from tangible.agent.loop import WRAP_UP_MAX_CHARS, RunOutcome, RunSetup
+from tangible.agent.progress import FEED
 from tangible.agent.strands_engine.guardrails import RunState, TangibleGuardrails, tangible_tools
 from tangible.agent.strands_engine.model import ModelClientModel
 
@@ -42,7 +43,9 @@ def build_agent(
 def run_strands(setup: RunSetup) -> RunOutcome:
     state = RunState(setup)
     setup.logged.lock = state.lock
+    FEED.start(setup.case.id)
     lead = build_agent(state, LEAD, setup.system)
+    state.note(LEAD, "start", "started the investigation")
     result = lead(setup.first_message)
     model = lead.model
     model_id = model.model_id if isinstance(model, ModelClientModel) else ""

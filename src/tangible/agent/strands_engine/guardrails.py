@@ -14,6 +14,7 @@ must never decide for itself:
 Tool execution itself is `call_tool` (validated, savepointed, one `tool_call` row per call).
 """
 
+import json
 import threading
 from collections import Counter
 from copy import deepcopy
@@ -32,6 +33,7 @@ from strands.tools.tools import PythonAgentTool
 from strands.types.tools import ToolResult, ToolUse
 
 from tangible.agent.loop import RunSetup, tool_payload, wrap_tool_output, wrap_up_notice
+from tangible.agent.progress import FEED
 from tangible.agent.strands_engine.model import _result_text
 from tangible.agent.tools import call_tool
 from tangible.agent.tools.runtime import TOOLS
@@ -57,6 +59,7 @@ class RunState:
     def note(self, agent: str, kind: str, text: str) -> None:
         with self.lock:
             self.events.append({"agent": agent, "kind": kind, "text": text})
+        FEED.add(self.setup.case.id, agent, kind, text)
 
 
 def tangible_tools(state: RunState, names: set[str] | None = None) -> list[PythonAgentTool]:
@@ -76,6 +79,9 @@ def _tool(state: RunState, name: str, description: str, schema: dict[str, Any]) 
             result = call_tool(ctx, name, tool_use["input"])
             payload, is_error = tool_payload(ctx, name, result)
             state.call_ids[(id(inv.get("agent")), tool_use["toolUseId"])] = result.call_id
+        if name == "record_finding" and not is_error:
+            agent = getattr(inv.get("agent"), "name", "agent")
+            state.note(agent, "finding", json.loads(payload).get("status", "recorded"))
         return {
             "toolUseId": tool_use["toolUseId"],
             "status": "error" if is_error else "success",
@@ -113,7 +119,9 @@ class TangibleGuardrails(HookProvider):
             if s.stop_reason is None and s.setup.logged.cost >= case.budget_usd:
                 s.stop_reason = "cost_budget"
             if s.stop_reason is not None:
-                event.cancel = STOP_TEXT.format(why=s.stop_reason.replace("_", " ") + " spent")
+                why = s.stop_reason.replace("_", " ") + " spent"
+                event.cancel = STOP_TEXT.format(why=why)
+                s.note(self.agent_name, "stop", why)
                 return
             if self.max_steps is not None and s.agent_steps[self.agent_name] >= self.max_steps:
                 event.cancel = STOP_TEXT.format(why=f"{self.agent_name} used its steps")
@@ -140,11 +148,8 @@ class TangibleGuardrails(HookProvider):
             **result,
             "content": [{"text": wrap_tool_output(call_id, tu["name"], payload)}],
         }
-        self.state.note(
-            self.agent_name,
-            "tool",
-            f"{tu['name']} {'error' if result['status'] == 'error' else 'ok'}",
-        )
+        failed = result["status"] == "error"
+        self.state.note(self.agent_name, "error" if failed else "tool", tu["name"])
 
     def after_tools(self, event: AfterToolsEvent) -> None:
         results = [c["toolResult"] for c in event.message["content"] if "toolResult" in c]

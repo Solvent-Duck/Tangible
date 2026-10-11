@@ -28,6 +28,7 @@ from tangible.agent.loop import approve_plan as _approve_plan
 from tangible.agent.loop import investigate as _investigate
 from tangible.agent.loop import propose_plan as _propose_plan
 from tangible.agent.loop import send_back as _send_back
+from tangible.agent.progress import FEED
 from tangible.agent.prompts import load_prompt
 from tangible.agent.verify import verify_numbers
 from tangible.assessment import freeze, record_override, replay
@@ -453,6 +454,8 @@ def case_status_view(conn: Conn, p: Principal, case_id: str) -> dict[str, Any]:
     out: dict[str, Any] = {"id": case.id, "status": case.status}
     if p.role == "analyst":
         out.update(_run_notices(conn, case))
+    if case.status == "investigating":
+        out["feed"] = FEED.recent(case.id)  # display only; see agent/progress.py
     return out
 
 
