@@ -248,6 +248,7 @@ def test_backtest_page_missing_or_bad_file(
     page = ui(stack, "GET", "/backtest", "ana", 200).text
     assert "No backtest report has been generated yet" in page
     assert "tangible-backtest synth" in page and "tangible-backtest run" in page
+    assert f"<code>{tmp_path / 'nope.json'}</code>" in page  # the report path, not the URL path
     assert BANNER not in page
 
     bad = tmp_path / "bad.json"

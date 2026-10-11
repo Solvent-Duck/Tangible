@@ -769,7 +769,7 @@ def backtest_page(request: Request, conn: UiConn, p: UiPrincipal) -> Response:
     )  # fmt: skip
     summary = backtest_view.summarise(loaded.data) if loaded.data is not None else None
     return render(
-        request, "backtest.html", p, s=summary, problem=loaded.problem, path=str(loaded.path),
+        request, "backtest.html", p, s=summary, problem=loaded.problem, report_path=str(loaded.path),
         hint=backtest_view.GENERATE_HINT,
     )  # fmt: skip
 

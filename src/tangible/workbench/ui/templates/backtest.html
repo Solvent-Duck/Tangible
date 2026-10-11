@@ -8,12 +8,12 @@
 </p>
 <p>Generate a synthetic one (needs <code>data/processed/uci_lines.csv</code> and <code>make db-up</code>), then reload this page:</p>
 <pre>{{ hint }}</pre>
-<p class="meta">Looking for the report at <code>{{ path }}</code>. Set <code>TANGIBLE_BACKTEST_REPORT</code> to read a different file.</p>
+<p class="meta">Looking for the report at <code>{{ report_path }}</code>. Set <code>TANGIBLE_BACKTEST_REPORT</code> to read a different file.</p>
 {% else %}
 {% if s.synthetic %}
 <p class="flash flash-error" role="note" style="font-size:1.4rem;font-weight:700;text-align:center;padding:1rem">SYNTHETIC COHORT: labels are planted problems, not repayment outcomes</p>
 {% endif %}
-<p class="meta">Report <code>{{ path }}</code> | policy v{{ s.policy_version }}{% if s.policy_sha %} | policy hash <span class="sha">{{ s.policy_sha[:12] }}</span>{% endif %}{% if s.agent_status %} | agent: {{ s.agent_status }}{% endif %}</p>
+<p class="meta">Report <code>{{ report_path }}</code> | policy v{{ s.policy_version }}{% if s.policy_sha %} | policy hash <span class="sha">{{ s.policy_sha[:12] }}</span>{% endif %}{% if s.agent_status %} | agent: {{ s.agent_status }}{% endif %}</p>
 
 <section class="card mt-3"><div class="card-head"><h2>Cohort summary</h2></div>
 <div class="card-body">
