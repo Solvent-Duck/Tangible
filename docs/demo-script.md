@@ -11,9 +11,14 @@ TANGIBLE_MODEL_BACKEND=bedrock \
 TANGIBLE_BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0 \
 TANGIBLE_BEDROCK_REGION=us-east-2 \
 TANGIBLE_PRICE_IN_PER_MTOK=3.30 TANGIBLE_PRICE_OUT_PER_MTOK=16.50 \
-TANGIBLE_WEB_PROVIDER=fixtures AWS_PROFILE=tangible \
+TANGIBLE_WEB_PROVIDER=fixtures TANGIBLE_SIGNAL_PROVIDER=fixtures AWS_PROFILE=tangible \
 uv run --with "botocore[crt]" tangible-demo seed --run-agent
 ```
+
+The seed also loads the two fictional tariff actions and creates the onboarding pipeline (four
+invited US businesses, one of them submitted and ready for diligence). For the hosted demo the
+same tenant is restored on Railway and your Clerk account is linked as its credit admin (see
+"Hosted demo" below).
 
 The seed prints the tenant id. Then write the statement PDFs for the live upload:
 
@@ -44,10 +49,20 @@ and connections seeded days earlier would read as stale.
 | Kestrel Gift Co Ltd | signed, no band | Payouts don't reach the bank: a hidden reserve. The rule hold blocks a decision. |
 | Brightwell Crafts Ltd | review | Owner money counted as sales, payouts above orders, stale SumUp feed. A review page carries an injection attempt; the agent ignored it and recorded it as an info finding. The registry also shows a director change: a good send-back question ("check the companies registry for officer changes"). |
 | Oakden Trading Ltd | review | Amazon income from an account it never connected; bank access revoked 3 days before the case date (both agent holds, verified). |
+| Juniper & Rye Bakery LLC (US) | open | Kept for the live Strands run. Its regulars lift it one band by the loyalty route; it states no imports. |
+| Northgate Phone Repair LLC (US) | open | A same-name Spokane shop the search must refuse (match 0.40), whose reviews try to talk the agent into claiming it. Imports phone parts from China: tariff exposure. |
+
+The onboarding pipeline (dashboard): Cedar & Sage Florist (invited), Bluebird Cycle Works
+(opened the link), Harborview Optics (connecting) and **Lakeside Furniture Co** (submitted;
+55% of cost of goods is Chinese furniture, under the fictional DEMO-2026-0001 duty).
 
 ## Flow (about 15 minutes)
 
-0. **Invite (optional, 3 minutes).** As **adm**: Invite a business → toggle Inventory and
+0. **The lender's day (2 minutes).** As **adm**, the dashboard: the pipeline from invited to
+   signed, Lakeside "Ready for diligence". Open it: the checklist, timeline and the import mix it
+   stated. **Start diligence** and assign ana. Optionally show **Invite a business**: toggle groups,
+   the live email preview.
+00. **Invite (optional, 3 minutes).** As **adm**: Invite a business → toggle Inventory and
    Digital presence → watch the email preview → Send. Copy the link from the Outbox, open it in
    a private window, create the account, connect a bank, upload a file, submit. Back on the
    dashboard the business is "Ready for diligence"; Start diligence assigns it to ana.
@@ -62,8 +77,12 @@ and connections seeded days earlier would read as stale.
    call, the SQL it ran, the result table, the evidence ref, and the raw ledger line as
    received. Point out the "verified" badge: every number in the finding was found in a cited
    tool result.
-4. **Live investigation.** Open **Harbour & Pine** → Propose plan → read the checklist → Approve
-   → Start investigation (about 3 minutes; the status updates itself). While it runs, show
+4. **Live investigation on the Strands team.** Open **Juniper & Rye** → Propose plan → Approve →
+   Start investigation. The status panel's live feed shows the presence, loyalty and reputation
+   agents searching in parallel, then the lead investigator. When it finishes: **Public signals**
+   (matched listings with entity_match scores) and **Agent run** (the team, steps, tool calls).
+   Sign it: the assessment reads "uplift C→B via loyalty". Then run **Northgate**: the decoy
+   scores 0.40 and is refused. (Harbour & Pine is the classic-loop alternative.) While it runs, show
    **Oakden** (holds from rules and verified agent findings; the "Checked, nothing found"
    wrap-up).
 5. **Review.** On **Brightwell**:
@@ -81,6 +100,9 @@ and connections seeded days earlier would read as stale.
    - **Replay** shows it re-derives exactly;
    - **Export JSON** gives the frozen assessment.
 8. **Lender view.** Switch to **len**. The lender sees signed cases only and has no actions.
+8b. **Systemic exposure.** On Lakeside's case (or Northgate's), **Systemic exposure** lists the
+   stated imports against the tariff action known at the case date; the cases list shows **Book
+   exposure** across the portfolio. Policy 0.5.0 only ever lowers the limit, never the band.
 9. **Backtest.** Open the Backtest tab: 13 of 13 planted problems caught, loss by band, all 20
    assessments replay, and no data leaks across the decision date. Say clearly that it's
    synthetic: the labels are planted problems, not repayment outcomes.
@@ -108,3 +130,12 @@ and connections seeded days earlier would read as stale.
 - The backtest is not evidence of predictive power. It runs on a synthetic cohort.
 - Web results are fixtures, not live lookups.
 - Bands and limits come from a starting-guess policy (0.3.0), not a calibrated one.
+
+
+## Hosted demo
+
+- Web app: the `web` service on Railway (Clerk sign-in). API: the `workbench` service.
+- Two Clerk accounts, two personas: one is the tenant's credit admin (`--link-subject`), the
+  other its analyst with every case assigned (`--link-analyst`). Use two browser profiles.
+- Live agent runs need Bedrock credentials, which the hosted API does not have: the hosted demo
+  shows the pre-run cases. Run live investigations locally.

@@ -394,3 +394,37 @@ def test_profile_writes_an_application_row_with_the_import_mix(on: On) -> None:
             (sent["borrower_id"],),
         ).fetchall()]  # fmt: skip
     assert mixes == [[{"hs_chapter": "94", "country": "CN", "share_of_cogs": "0.6000"}], []]
+
+
+def test_public_invite_routes_are_rate_limited(test_db_url: str, tmp_path: Path) -> None:
+    on = make_on(test_db_url, tmp_path, public_rate_per_minute=3)
+    for _ in range(3):
+        on.call("GET", "/api/onboarding/invite/nope", None, 404)
+    on.call("GET", "/api/onboarding/invite/nope", None, 429)
+    on.accept("nope", "x", 429)  # same client, same window
+    r = on.http.get("/healthz")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["referrer-policy"] == "no-referrer"
+
+
+def test_demo_pipeline_reaches_every_stage(test_db_url: str, tmp_path: Path) -> None:
+    from tangible.demo.pipeline import PIPELINE, seed_pipeline
+    from tangible.workbench.auth import lookup_principal
+
+    on = make_on(test_db_url, tmp_path)
+    settings = on.http.app.state.settings  # type: ignore[attr-defined]
+    seed_pipeline(settings, lookup_principal(on.url, on.tenant, "adm"), log=lambda _: None)
+    stages = {r["business_name"]: r["stage"]
+              for r in on.call("GET", "/api/invites", "adm", 200)}  # fmt: skip
+    assert stages == {p.business: p.stage for p in PIPELINE}
+    dash = on.call("GET", "/api/dashboard", "adm", 200)
+    assert (
+        dash["kpis"]["ready_for_diligence"] == 1 and len(on.call("GET", "/api/outbox", "adm")) == 4
+    )
+    ready = next(r for r in dash["pipeline"] if r["stage"] == "submitted")
+    case = on.call("POST", f"/api/invites/{ready['id']}/open-case", "adm", 201,
+                   json={"assigned_analyst": "ana"})  # fmt: skip
+    ws = on.call("GET", f"/api/cases/{case['id']}/workspace", "ana", 200)
+    assert ws["systemic"]["stated"] and {
+        line["hs_chapter"] for line in ws["systemic"]["lines"]
+    } == {"94", "44"}
