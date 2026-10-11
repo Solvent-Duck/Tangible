@@ -528,3 +528,11 @@ def test_every_released_metric_has_a_display_label() -> None:
 
     keys = {key for members in METRIC_SETS.values() for key, _ in members}
     assert keys - set(METRIC_LABELS) == set()
+
+
+def test_case_page_shows_the_agent_team(stack: Stack) -> None:  # noqa: F811
+    case_id = make_case(stack)
+    plan_and_investigate(stack, case_id)
+    page = ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
+    assert '<span class="engine-badge">Strands Agents</span>' in page
+    assert "Agent team" in page and "Lead investigator" in page and "1 step, 0 tool calls" in page

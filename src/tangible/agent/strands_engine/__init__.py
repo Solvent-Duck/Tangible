@@ -63,5 +63,9 @@ def run_strands(setup: RunSetup) -> RunOutcome:
         state.steps,
         model_id,
         wrap_up[:WRAP_UP_MAX_CHARS],
-        {"agents": dict(state.agent_steps)} | ({"search_team": sorted(reports)} if reports else {}),
+        {
+            "agents": dict(state.agent_steps),
+            "tool_calls": dict(state.tool_calls),
+            **({"search_team": sorted(reports)} if reports else {}),
+        },
     )

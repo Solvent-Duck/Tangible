@@ -599,3 +599,9 @@ body.auth {
 .doc-state { font-size: .84rem; color: var(--ink-2); }
 .doc-state.ok { color: var(--ok-ink); }
 .doc-state.warn { color: var(--review-ink); }
+
+/* Agent team (Strands engine) */
+.engine-badge { display: inline-block; padding: .05rem .5rem; border-radius: 999px; background: var(--live-soft); color: var(--live); font-size: .78rem; font-weight: 600; }
+.side-sub { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); margin: 1rem 0 .4rem; }
+.team-list { list-style: none; margin: 0; padding: 0; font-size: .86rem; }
+.team-list li { display: flex; justify-content: space-between; gap: .5rem; padding: .25rem 0; border-top: 1px solid var(--line); }

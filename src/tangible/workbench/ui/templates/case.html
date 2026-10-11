@@ -238,8 +238,18 @@
       <dt>Step budget</dt><dd>{{ c.budget_steps }}</dd>
       <dt>Cost budget</dt><dd>${{ c.budget_usd }}</dd>
       {% if c.last_investigation %}<dt>Stopped</dt><dd><code>{{ c.last_investigation.stop_reason }}</code></dd>
-      <dt>At</dt><dd>{{ c.last_investigation.at | when }}</dd>{% endif %}
+      <dt>At</dt><dd>{{ c.last_investigation.at | when }}</dd>
+      {% if c.last_investigation.engine %}<dt>Engine</dt><dd>{% if c.last_investigation.engine == 'strands' %}<span class="engine-badge">Strands Agents</span>{% else %}classic loop{% endif %}</dd>{% endif %}{% endif %}
     </dl>
+    {% set team = c.last_investigation.agents if c.last_investigation else none %}
+    {% if team %}
+    <h3 class="side-sub">Agent team</h3>
+    <ul class="team-list">
+      {% for name, n in team.items() %}
+      <li><span>{{ name | replace('_', ' ') | capitalize }}</span><span class="help">{{ n }} step{{ 's' if n != 1 }}{% if 'tool_calls' in c.last_investigation %}, {{ c.last_investigation.tool_calls.get(name, 0) }} tool calls{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
     {% if c.last_investigation or c.usage.model_calls %}<p class="help mt-2 mb-0">Model calls: {{ c.usage.model_calls }}, {% if c.usage.model_calls and not c.usage.priced %}<span class="unpriced">{{ c.usage.cost_text }}</span>{% else %}cost {{ c.usage.cost_text }}{% endif %}.</p>{% endif %}
   </section>
 </aside>

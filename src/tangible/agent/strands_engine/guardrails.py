@@ -55,6 +55,7 @@ class RunState:
         default_factory=dict
     )  # (agent, toolUseId) -> call_id
     events: list[dict[str, Any]] = field(default_factory=list)  # display-only progress trail
+    tool_calls: Counter[str] = field(default_factory=Counter)  # agent -> tool calls run
 
     def note(self, agent: str, kind: str, text: str) -> None:
         with self.lock:
@@ -79,6 +80,7 @@ def _tool(state: RunState, name: str, description: str, schema: dict[str, Any]) 
             result = call_tool(ctx, name, tool_use["input"])
             payload, is_error = tool_payload(ctx, name, result)
             state.call_ids[(id(inv.get("agent")), tool_use["toolUseId"])] = result.call_id
+            state.tool_calls[getattr(inv.get("agent"), "name", "agent")] += 1
         if name == "record_finding" and not is_error:
             agent = getattr(inv.get("agent"), "name", "agent")
             state.note(agent, "finding", json.loads(payload).get("status", "recorded"))
