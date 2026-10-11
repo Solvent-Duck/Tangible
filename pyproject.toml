@@ -43,6 +43,7 @@ tangible-workbench = "tangible.workbench.app:main"
 tangible-pull = "tangible.connectors.cli:main"
 tangible-sandbox = "tangible.connectors.sandbox:main"
 tangible-demo = "tangible.demo.cli:main"
+tangible-admin = "tangible.workbench.admin_cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

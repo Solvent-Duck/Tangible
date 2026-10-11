@@ -527,6 +527,7 @@ def seed_demo(
     base_url: str = DEFAULT_BASE_URL,
     now: datetime | None = None,
     log: Callable[[str], None] = print,
+    link_subject: str | None = None,
 ) -> SeedSummary:
     if run_agent:
         # The model vendor is named only in agent/llm.py; here we just insist on a real backend
@@ -580,6 +581,13 @@ def seed_demo(
     evidence = LocalEvidenceStore(store)
     with tenant_session(url, tenant_id) as conn:
         _create_users(conn, tenant_id)
+        if link_subject:
+            # A real sign-in (e.g. a Clerk user id) as this tenant's credit admin.
+            conn.execute(
+                "INSERT INTO app_user (tenant_id, subject, display_name, role) "
+                "VALUES (%s, %s, %s, 'credit_admin')",
+                (tenant_id, link_subject, "You (linked)"),
+            )
     staged: list[
         tuple[BorrowerSpec, str, date, date, int, datetime, list[tuple[str, str]], tuple[str, ...]]
     ] = []

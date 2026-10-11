@@ -82,9 +82,17 @@ def _signed(s: str, d: Decimal) -> str:
 def metric_value(v: Any, key: str) -> Markup:
     """A metric value, readable: fractions as percentages, durations with units. The exact
     stored value is kept in the title."""
+    text = metric_text(v, key)
+    if text is None:
+        return Markup('<span class="na">not available</span>')
+    return Markup('<span title="{0}">{1}</span>').format(str(v), text)
+
+
+def metric_text(v: Any, key: str) -> str | None:
+    """`metric_value` as plain text (None when the value is absent), for the JSON API."""
     d = _decimal(v)
     if d is None:
-        return Markup('<span class="na">not available</span>')
+        return None
     signed = key.endswith(_SIGNED_SUFFIXES)
     if key.endswith(_PERCENT_SUFFIXES):
         text = _trim(d * 100, 1) + "%"
@@ -98,7 +106,7 @@ def metric_value(v: Any, key: str) -> Markup:
         text = _trim(d, 4)
     if signed:
         text = _signed(text, d)
-    return Markup('<span title="{0}">{1}</span>').format(str(v), text)
+    return text
 
 
 def short_id(v: Any) -> str:

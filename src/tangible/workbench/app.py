@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from tangible.workbench import services, ui
-from tangible.workbench.api import assessments, cases, dashboard, invites, me, onboarding
+from tangible.workbench.api import assessments, backtest, cases, dashboard, invites, me, onboarding
 from tangible.workbench.auth import Authenticator, DevHeaderAuthenticator, OidcAuthenticator
 from tangible.workbench.clerk import build_clerk
 from tangible.workbench.gate import PasswordGate
@@ -64,6 +64,7 @@ def create_app(
     app.include_router(dashboard.router)
     app.include_router(invites.router)
     app.include_router(onboarding.router)
+    app.include_router(backtest.router)
     if settings.auth_mode != "clerk":
         # The server-rendered workbench predates the web app; it knows dev and OIDC sign-in only.
         ui.install(app)

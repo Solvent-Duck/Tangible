@@ -34,7 +34,7 @@ from fastapi.templating import Jinja2Templates
 from tangible.agent.llm import ModelConfigError
 from tangible.backtest import view as backtest_view
 from tangible.db.session import Conn, admin_connect, tenant_session
-from tangible.workbench import audit, services
+from tangible.workbench import audit, queries, services
 from tangible.workbench.auth import (
     TENANT_HEADER,
     USER_HEADER,
@@ -51,7 +51,7 @@ from tangible.workbench.oidc import (
     OidcRuntime,
     safe_next,
 )
-from tangible.workbench.ui import display, present, queries
+from tangible.workbench.ui import display, present
 
 HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"
