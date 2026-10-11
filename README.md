@@ -24,11 +24,18 @@ Seed a demo tenant (five synthetic borrowers dated to the last week, users ana/a
 make demo
 ```
 
+Run the web app (landing page, lender dashboard, invites, business onboarding, due diligence) against a dev-auth API. See [docs/onboarding.md](docs/onboarding.md) for the flow, Clerk setup and deployment:
+
+```bash
+make web-install
+TANGIBLE_API_URL=http://127.0.0.1:8000 make web-dev   # http://localhost:3000
+```
+
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `src/tangible/db/` | Plain SQL migrations 0001–0008 (schema, RLS, immutability triggers), tenant sessions, repositories. Applied by `tangible-migrate`. |
+| `src/tangible/db/` | Plain SQL migrations 0001–0008 and 0010 (schema, RLS, immutability triggers; 0009 is reserved for the intangibles branch), tenant sessions, repositories. Applied by `tangible-migrate`. |
 | `src/tangible/ledger/` | Ledger row types and `known_as_of`, the single place the `observed_at` time rule lives. |
 | `src/tangible/ingest/`, `src/tangible/datasets/` | Load data into the ledger (`tangible-ingest`); UCI Online Retail loader and a synthetic generator with planted problems. |
 | `src/tangible/metrics/` | 23 versioned pure metrics (health and momentum), pinned as set `ms-2`. |
@@ -40,7 +47,9 @@ make demo
 | `src/tangible/evidence/`, `src/tangible/secrets/` | Raw evidence store (local directory, or S3 with Object Lock and SSE-KMS) and connector tokens (environment or Secrets Manager). |
 | `src/tangible/connectors/` | Rutter and Plaid adapters (`tangible-pull`) and sandbox seeding (`tangible-sandbox`). |
 | `src/tangible/backtest/` | Runs a cohort as of each loan's decision date and reports loss by band, metric discrimination, finding lift, plants caught, replay matches and agent spread (`tangible-backtest`). |
-| `src/tangible/workbench/` | Analyst workbench: FastAPI API and Jinja2/htmx UI with OIDC login (`tangible-workbench`). |
+| `src/tangible/workbench/` | Workbench: the FastAPI JSON API (`tangible-workbench`) with dev, OIDC or Clerk auth, the legacy Jinja2/htmx UI, and `tangible-admin` for staff users. |
+| `src/tangible/onboarding/`, `src/tangible/notify/` | Lender invites, the versioned request catalog, the business's onboarding, and the email outbox. |
+| `web/` | The web app (Next.js): landing page, lender dashboard and invite composer, business onboarding, due-diligence workspace. |
 | `src/tangible/demo/` | Demo tenant seed (`tangible-demo seed`, `make demo`) and statement PDFs from a borrower's ledger (`tangible-demo statements`). |
 | `policies/default.yaml` | Default lender policy 0.3.0 (starting-guess thresholds; agent holds block only once an analyst accepts them). Older versions are kept beside it (`default-0.2.2.yaml`) so replay can use the policy an assessment was frozen under. |
 

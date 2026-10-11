@@ -1,10 +1,13 @@
 import type { NextConfig } from "next";
 
 // The FastAPI workbench. /api/* is proxied to it, so the browser talks to one origin (no CORS)
-// and the session token rides along as a Bearer header set by the client.
+// and the session token rides along as a Bearer header set by the client. Rewrites are fixed at
+// build time, so a container build needs TANGIBLE_API_URL as a build argument.
 const api = (process.env.TANGIBLE_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
+  // A self-contained server for the container image (web/Dockerfile).
+  output: "standalone",
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${api}/api/:path*` }];
   },

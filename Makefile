@@ -1,4 +1,4 @@
-.PHONY: install db-up db-down migrate test lint fmt typecheck check demo
+.PHONY: install db-up db-down migrate test lint fmt typecheck check demo web-install web-dev web-check
 
 install:
 	uv sync
@@ -35,3 +35,14 @@ check: lint typecheck test
 # Then serve it with the `workbench-demo` launch config (port 8001, same env, dev auth).
 demo: migrate
 	uv run tangible-demo seed
+
+# The web app (web/, Next.js). It proxies /api/* to the workbench (TANGIBLE_API_URL, default
+# http://127.0.0.1:8000); run the API with TANGIBLE_DEV_AUTH=1 for the dev sign-in picker.
+web-install:
+	npm --prefix web ci
+
+web-dev:
+	NEXT_PUBLIC_AUTH_MODE=$${NEXT_PUBLIC_AUTH_MODE:-dev} npm --prefix web run dev
+
+web-check:
+	cd web && npx next typegen && npx tsc --noEmit && npm run lint && NEXT_PUBLIC_AUTH_MODE=dev npm run build
