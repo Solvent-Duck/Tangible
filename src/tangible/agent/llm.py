@@ -368,8 +368,8 @@ class LoggedClient:
         cost = cost_usd(resp, self.pricing)
         self.conn.execute(
             "INSERT INTO model_call (tenant_id, case_id, model_id, prompt_key, prompt_version, "
-            "prompt_sha256, input_tokens, output_tokens, cost_usd) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "prompt_sha256, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
+            "cost_usd) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 self.case.tenant_id,
                 self.case.id,
@@ -379,6 +379,8 @@ class LoggedClient:
                 self.prompt.sha256,
                 resp.input_tokens,
                 resp.output_tokens,
+                resp.cache_read_tokens,
+                resp.cache_write_tokens,
                 cost.quantize(Decimal("0.000001")),
             ),
         )

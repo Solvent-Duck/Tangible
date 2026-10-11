@@ -349,9 +349,12 @@ def test_logged_client_writes_model_call(test_db_url: str) -> None:
     inner = ScriptedClient(
         [
             ModelResponse("a", model_id="m1", input_tokens=2_000, output_tokens=500),
-            ModelResponse("b", model_id="m1", input_tokens=1_000, output_tokens=100),
+            ModelResponse(
+                "b", model_id="m1", input_tokens=1_000, output_tokens=100,
+                cache_read_tokens=10_000, cache_write_tokens=0,
+            ),
         ]
-    )
+    )  # fmt: skip
     with tenant_session(test_db_url, tenant) as conn:
         borrower = create_borrower(conn, tenant, "b")
         case = create_case(conn, tenant, borrower, datetime(2010, 7, 1, tzinfo=UTC))
@@ -360,14 +363,16 @@ def test_logged_client_writes_model_call(test_db_url: str) -> None:
         logged.complete(system="s", messages=[])
         rows = conn.execute(
             "SELECT tenant_id, case_id, model_id, prompt_key, prompt_version, prompt_sha256, "
-            "input_tokens, output_tokens, cost_usd FROM model_call ORDER BY input_tokens DESC"
+            "input_tokens, output_tokens, cost_usd, cache_read_tokens, cache_write_tokens "
+            "FROM model_call ORDER BY input_tokens DESC"
         ).fetchall()
     assert len(rows) == 2
     assert rows[0] == (
         type(rows[0][0])(tenant), type(rows[0][1])(case.id), "m1", "system", "1",
-        prompt.sha256, 2_000, 500, Decimal("0.013500"),
+        prompt.sha256, 2_000, 500, Decimal("0.013500"), 0, 0,
     )  # fmt: skip
-    assert rows[1][8] == Decimal("0.004500")
+    # 1,000 in x 3 + 100 out x 15 + 10,000 cache reads x 0.3 (0.1x input), per million
+    assert rows[1][8:] == (Decimal("0.007500"), 10_000, 0)
     assert logged.calls == 2
-    assert logged.total_tokens == 3_600
-    assert logged.cost == Decimal("0.0180")
+    assert logged.total_tokens == 13_600
+    assert logged.cost == Decimal("0.0210")
