@@ -40,6 +40,7 @@ from tangible.datasets.synthetic import DEFAULT_PROFILE, PLANTS, Profile, genera
 from tangible.db.repo import create_borrower, load_ledger
 from tangible.db.session import Conn, admin_connect, tenant_session
 from tangible.db.signals import insert_application
+from tangible.demo.pipeline import seed_pipeline
 from tangible.demo.shift import default_end_on, shift_lines
 from tangible.demo.us_intangibles import BY_KEY as US_BY_KEY
 from tangible.evidence.store import LocalEvidenceStore
@@ -563,6 +564,8 @@ def seed_demo(
     now: datetime | None = None,
     log: Callable[[str], None] = print,
     link_subject: str | None = None,
+    link_analyst: str | None = None,
+    lender_name: str | None = None,
 ) -> SeedSummary:
     if run_agent:
         # The model vendor is named only in agent/llm.py; here we just insist on a real backend
@@ -586,7 +589,8 @@ def seed_demo(
             raise SeedError(f"{spec.name}: partition {spec.partition} not in 0..{n_partitions - 1}")
     requested = end_on or default_end_on()
     stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M")
-    tenant_name = f"{name}-{stamp}"
+    # The tenant is the lender: hosted demos show its name to invited businesses.
+    tenant_name = lender_name or f"{name}-{stamp}"
     settings = dataclasses.replace(Settings.from_env(), evidence_dir=store)
     if database_url:
         settings = dataclasses.replace(settings, database_url=database_url)
@@ -625,8 +629,16 @@ def seed_demo(
             conn.execute(
                 "INSERT INTO app_user (tenant_id, subject, display_name, role) "
                 "VALUES (%s, %s, %s, 'credit_admin')",
-                (tenant_id, link_subject, "You (linked)"),
+                (tenant_id, link_subject, "You (credit admin)"),
             )
+        if link_analyst:
+            # A second real sign-in as the analyst; the seeded cases are assigned to it.
+            conn.execute(
+                "INSERT INTO app_user (tenant_id, subject, display_name, role) "
+                "VALUES (%s, %s, %s, 'analyst')",
+                (tenant_id, link_analyst, "You (analyst)"),
+            )
+    analyst = link_analyst or ANALYST
     staged: list[
         tuple[BorrowerSpec, str, date, date, int, datetime, list[tuple[str, str]], tuple[str, ...]]
     ] = []
@@ -648,7 +660,7 @@ def seed_demo(
 
     # 3. cases, all assigned to the analyst, created by the credit admin like the UI does
     admin_p = lookup_principal(url, tenant_id, ADMIN)
-    analyst_p = lookup_principal(url, tenant_id, ANALYST)
+    analyst_p = lookup_principal(url, tenant_id, analyst)
     seeded: list[SeededBorrower] = []
     for spec, borrower_id, first, last, offset, as_of, loud, described in staged:
         if spec.identity is not None:
@@ -658,7 +670,7 @@ def seed_demo(
         with tenant_session(url, tenant_id) as conn:
             case = services.create_new_case(
                 conn, admin_p, borrower_id=borrower_id, as_of=as_of,
-                loan_amount=spec.loan_amount, assigned_analyst=ANALYST,
+                loan_amount=spec.loan_amount, assigned_analyst=analyst,
             )  # fmt: skip
         case_id = str(case["id"])
         if run_agent and spec.stage != "open":
@@ -680,5 +692,8 @@ def seed_demo(
                 described,
             )  # fmt: skip
         )
+    # 4. the onboarding pipeline the lender dashboard shows (invites at every stage)
+    log("onboarding pipeline:")
+    seed_pipeline(settings, admin_p, log)
     login = f"{base_url}/sign-in?tenant={tenant_id}"
     return SeedSummary(tenant_id, tenant_name, login, tuple(seeded), effective, requested)

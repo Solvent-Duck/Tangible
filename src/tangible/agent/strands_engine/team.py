@@ -45,6 +45,9 @@ def wrap_report(agent: str, text: str) -> str:
     return f'<agent_report agent="{name}" untrusted="true">{safe}</agent_report>'
 
 
+SEARCH_TIMEOUT_S = 600.0
+
+
 def run_search_team(state: RunState, team: tuple[SearchAgent, ...] = TEAM) -> dict[str, str]:
     """Run the search agents in parallel; returns each agent's closing report (untrusted)."""
     from tangible.agent.strands_engine import build_agent  # circular at import time
@@ -58,6 +61,10 @@ def run_search_team(state: RunState, team: tuple[SearchAgent, ...] = TEAM) -> di
         builder.set_entry_point(a.name)  # no edges: all three start at once
         state.note(a.name, "start", "started the public-records search")
     builder.set_graph_id("intangibles_search")
+    # No edges, so each agent runs once; the limits make that explicit and bound wall time
+    # (step and cost budgets are still enforced per call by the guardrail hooks).
+    builder.set_max_node_executions(len(team))
+    builder.set_execution_timeout(SEARCH_TIMEOUT_S)
     result = builder.build()(state.setup.search_brief)
     reports: dict[str, str] = {}
     for a in team:

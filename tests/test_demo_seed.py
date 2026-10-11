@@ -12,6 +12,7 @@ from tangible.db.repo import load_ledger
 from tangible.db.session import admin_connect, tenant_session
 from tangible.demo import seed as seed_mod
 from tangible.demo.cli import main as demo_main
+from tangible.demo.pipeline import PIPELINE
 from tangible.demo.seed import (
     SPECS,
     BorrowerSpec,
@@ -75,13 +76,23 @@ def test_seed_creates_tenant_users_borrowers_and_open_cases(
     t = s.tenant_id
 
     with tenant_session(test_db_url, t) as conn:
-        users = dict(conn.execute("SELECT subject, role FROM app_user").fetchall())
-        names = {r[0] for r in conn.execute("SELECT name FROM borrower").fetchall()}
+        users = dict(
+            conn.execute("SELECT subject, role FROM app_user WHERE role <> 'borrower'").fetchall()
+        )
+        names = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM borrower b WHERE NOT EXISTS "
+                "(SELECT 1 FROM invite i WHERE i.borrower_id = b.id)"
+            ).fetchall()
+        }
+        invited = {r[0] for r in conn.execute("SELECT business_name FROM invite").fetchall()}
         cases = conn.execute(
             "SELECT status, assigned_analyst, loan_amount, as_of FROM case_file"
         ).fetchall()
     assert users == {"ana": "analyst", "adm": "credit_admin", "len": "lender_underwriter"}
     assert names == {sp.name for sp in TINY_SPECS}
+    assert invited == {p.business for p in PIPELINE}  # the onboarding pipeline rides along
     assert len(cases) == len(TINY_SPECS)
     assert {c[0] for c in cases} == {"open"}  # no model, so nothing is staged beyond open
     assert {c[1] for c in cases} == {"ana"}
@@ -137,7 +148,7 @@ def test_seed_is_rerunnable_and_leaves_earlier_data_alone(
     }
     assert count(test_db_url, second.tenant_id, "case_file") == len(TINY_SPECS)
     # Another tenant's data is invisible through RLS.
-    assert count(test_db_url, second.tenant_id, "borrower") == len(TINY_SPECS)
+    assert count(test_db_url, second.tenant_id, "borrower") == len(TINY_SPECS) + len(PIPELINE)
 
 
 def test_clean_borrower_with_findings_fails_loudly(

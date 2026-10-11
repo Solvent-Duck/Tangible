@@ -3,13 +3,15 @@ only a signed-up identity; everything else needs the borrower user that acceptin
 
 from typing import Any
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel
 
 from tangible.onboarding import services
 from tangible.workbench.deps import ConnDep, IdentityDep, PrincipalDep, SettingsDep
+from tangible.workbench.ratelimit import public_limit
 
 router = APIRouter(prefix="/api/onboarding")
+# The token is the credential on the two public routes, so they are rate-limited per client IP.
 
 
 class Accept(BaseModel):
@@ -24,12 +26,12 @@ class Answer(BaseModel):
     value: str
 
 
-@router.get("/invite/{token}")
+@router.get("/invite/{token}", dependencies=[Depends(public_limit)])
 def preview(token: str, settings: SettingsDep) -> dict[str, Any]:
     return services.preview_invite(settings.database_url, token)
 
 
-@router.post("/accept")
+@router.post("/accept", dependencies=[Depends(public_limit)])
 def accept(body: Accept, identity: IdentityDep, settings: SettingsDep) -> dict[str, Any]:
     return services.accept_invite(settings.database_url, body.token, identity)
 

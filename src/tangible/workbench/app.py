@@ -1,18 +1,21 @@
 """The workbench FastAPI app: `create_app(settings)` and the `tangible-workbench` entry point."""
 
 import os
+from typing import Any
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from tangible.db.migrate import migrate
 from tangible.workbench import services
 from tangible.workbench.api import assessments, backtest, cases, dashboard, invites, me, onboarding
 from tangible.workbench.auth import Authenticator, DevHeaderAuthenticator, OidcAuthenticator
 from tangible.workbench.clerk import build_clerk
 from tangible.workbench.gate import PasswordGate
 from tangible.workbench.oidc import build_oidc
+from tangible.workbench.ratelimit import RateLimit
 from tangible.workbench.settings import Settings
 
 _STATUS: dict[type[Exception], int] = {
@@ -46,12 +49,21 @@ def create_app(
     app = FastAPI(title="Tangible workbench API")
     app.state.settings = settings
     app.state.authenticator = authenticator
+    app.state.public_limit = RateLimit(per_minute=settings.public_rate_per_minute)
 
     async def domain_error(_: Request, exc: Exception) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=_STATUS[type(exc)])
 
     for exc_type in _STATUS:
         app.add_exception_handler(exc_type, domain_error)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next: Any) -> Any:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Cache-Control", "no-store")
+        return response
 
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, bool]:
@@ -70,11 +82,19 @@ def create_app(
 
 
 def main() -> None:
-    app = create_app(Settings.from_env())
+    settings = Settings.from_env()
+    if os.environ.get("TANGIBLE_MIGRATE_ON_START") == "1":
+        # Hosted deploys: apply pending migrations before serving (needs the owning role's URL).
+        applied = migrate(settings.database_url)
+        print("migrations applied: " + ", ".join(applied) if applied else "migrations up to date")
+    app = create_app(settings)
     uvicorn.run(
         app, host=os.environ.get("TANGIBLE_HOST", "127.0.0.1"),
         # PORT is what hosting platforms (Railway, Heroku) assign; TANGIBLE_PORT wins if set.
         port=int(os.environ.get("TANGIBLE_PORT") or os.environ.get("PORT") or "8000"),
+        # Client IPs (for the public-route rate limit) from the platform proxy's headers; which
+        # proxies are trusted comes from FORWARDED_ALLOW_IPS (uvicorn's own setting).
+        proxy_headers=True,
     )  # fmt: skip
 
 

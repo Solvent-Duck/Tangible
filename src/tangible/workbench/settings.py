@@ -58,6 +58,8 @@ class Settings:
     public_url: str = "http://localhost:3000"
     invite_days: int = 14
     smtp_url: str | None = None
+    # Requests per minute per client IP on the public invite routes (preview, accept).
+    public_rate_per_minute: int = 30
 
     @property
     def auth_mode(self) -> str:
@@ -98,6 +100,7 @@ class Settings:
             public_url=env.get("TANGIBLE_PUBLIC_URL") or "http://localhost:3000",
             invite_days=int(env.get("TANGIBLE_INVITE_DAYS", "14")),
             smtp_url=env.get("TANGIBLE_SMTP_URL") or None,
+            public_rate_per_minute=int(env.get("TANGIBLE_PUBLIC_RATE_PER_MINUTE", "30")),
             pricing=Pricing(
                 Decimal(env.get("TANGIBLE_PRICE_IN_PER_MTOK", "0")),
                 Decimal(env.get("TANGIBLE_PRICE_OUT_PER_MTOK", "0")),

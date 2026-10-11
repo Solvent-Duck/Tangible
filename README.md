@@ -24,7 +24,7 @@ Seed a demo tenant (five synthetic borrowers dated to the last week, users ana/a
 make demo
 ```
 
-Run the web app (landing page, lender dashboard, invites, business onboarding, due diligence) against a dev-auth API. See [docs/onboarding.md](docs/onboarding.md) for the flow, Clerk setup and deployment:
+Run the web app (landing page, lender dashboard, invites, business onboarding, due diligence) against a dev-auth API. See [docs/onboarding.md](docs/onboarding.md) for the flow and Clerk setup, and [docs/deploy.md](docs/deploy.md) for hosting:
 
 ```bash
 make web-install
