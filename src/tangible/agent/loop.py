@@ -18,6 +18,7 @@ from tangible.agent.llm import LoggedClient, ModelClient, Pricing
 from tangible.agent.prompts import Prompt, load_prompt
 from tangible.agent.snapshot import schema_summary
 from tangible.agent.tools import call_tool, open_context, tool_definitions
+from tangible.agent.tools.findings import verification_feedback
 from tangible.agent.tools.library import library_catalog
 from tangible.agent.tools.runtime import Verifier
 from tangible.agent.verify import verify_numbers
@@ -29,7 +30,7 @@ from tangible.db.session import Conn
 from tangible.evidence.store import EvidenceStore
 from tangible.policy import Policy
 
-PROMPT_VERSIONS = {"system": "v1", "investigate": "v2", "plan": "v2"}
+PROMPT_VERSIONS = {"system": "v1", "investigate": "v3", "plan": "v2"}
 
 # After this many consecutive steps whose tool calls all failed, the loop asks for a wrap-up.
 STALL_STEPS = 3
@@ -330,7 +331,11 @@ def investigate(
             if out.error is not None:
                 payload, is_error = out.error, True
             else:
-                payload, is_error = json.dumps(out.result, ensure_ascii=False), False
+                shown = out.result
+                if c["name"] == "record_finding" and isinstance(shown, dict):
+                    # Feedback for the model only; the logged tool_call result is unchanged.
+                    shown = {**shown, "status": verification_feedback(ctx, shown)}
+                payload, is_error = json.dumps(shown, ensure_ascii=False), False
             results.append(
                 {
                     "type": "tool_result",

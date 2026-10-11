@@ -16,6 +16,7 @@ PROMPT_HASHES: dict[str, str] = {
     "investigate@v1": "adb3e1a9518e48f1483bdf49599ef3ccce415fb2913883f1a6479b7c73cc4a8d",
     "plan@v2": "c43dd85c1538e68e72edd3c4a934152c24648cd77ec61c962e9c6d1a435bf6bb",
     "investigate@v2": "8770555cac98f4e0da16f9838b5636f885e9bcb2d0ef56704b3a1f33126a30ba",
+    "investigate@v3": "dbef6fa9632b06456f19152dfe6ac346943b8e961bebbf80dfa613a8179a43c8",
 }
 
 _FILE = re.compile(r"^(?P<name>[\w-]+)@v(?P<version>\d+)\.md$")

@@ -17,6 +17,7 @@ from tangible.agent.loop import (
     propose_plan,
     send_back,
 )
+from tangible.agent.prompts import load_prompt
 from tangible.assessment import freeze, replay
 from tangible.db.cases import Case, create_case, get_case
 from tangible.db.findings import load_findings
@@ -228,7 +229,7 @@ def test_scripted_run_end_to_end(hw: World, tmp_path: Path) -> None:
         )
         res = run(conn, case, client, tmp_path)
         assert res.stop_reason == "end_turn" and res.steps == 4
-        assert res.prompt_versions == {"system": "v1", "investigate": "v2", "plan": "v2"}
+        assert res.prompt_versions == {"system": "v1", "investigate": "v3", "plan": "v2"}
         assert res.model_id == "scripted-1"
         assert len(res.finding_ids) == 1 and res.unverified_finding_ids == []
         (f,) = [f for f in load_findings(conn, case_id=case.id) if f.origin == "model"]
@@ -285,6 +286,66 @@ def test_unverified_finding_is_reported(hw: World, tmp_path: Path) -> None:
         )
         res = run(conn, case, client, tmp_path)
         assert res.unverified_finding_ids == res.finding_ids and len(res.finding_ids) == 1
+
+
+def finding_call(summary: str, slug: str, cid: str) -> Step:
+    return lambda m: call(
+        "record_finding",
+        {
+            "slug": slug,
+            "summary": summary,
+            "severity": "review",
+            "pillar": "integrity",
+            "direction": "raises_risk",
+            "tool_call_ids": [last_call_id(m)],
+        },
+        cid,
+    )
+
+
+def test_loop_uses_investigate_v3(hw: World, tmp_path: Path) -> None:
+    with tenant_session(hw.url, hw.tenant) as conn:
+        case = approved_case(conn, hw)
+        client = ScriptedClient([say("done")])
+        res = run(conn, case, client, tmp_path)
+        assert res.prompt_versions["investigate"] == "v3"
+        v3 = load_prompt("investigate", 3)
+        assert v3.text in client.calls[0].system
+        row = conn.execute(
+            "SELECT prompt_version, prompt_sha256 FROM model_call WHERE prompt_key = 'investigate'"
+        ).fetchone()
+        assert row == ("3", v3.sha256)
+
+
+def test_record_finding_feedback_names_unmatched_numbers(hw: World, tmp_path: Path) -> None:
+    with tenant_session(hw.url, hw.tenant) as conn:
+        case = approved_case(conn, hw)
+        client = FnClient(
+            [
+                lambda m: call("query_ledger", {"sql": "SELECT 41 AS n"}, "q1"),
+                finding_call("Deposits were short by 99,999.99, or 53 times usual.", "bad", "r1"),
+                lambda m: call("query_ledger", {"sql": "SELECT 41 AS n"}, "q2"),
+                finding_call("The query counted 41 rows.", "good", "r2"),
+                lambda m: say("done"),
+            ]
+        )
+        res = run(conn, case, client, tmp_path)
+        bad = tool_output_texts(client.calls[2])[-1]
+        assert "recorded; UNVERIFIED: numbers not found in cited results:" in bad
+        assert "99,999.99" in bad and "53" in bad and "41" not in bad.split("results:")[1]
+        good = tool_output_texts(client.calls[4])[-1]
+        assert "recorded; verified" in good and "UNVERIFIED" not in good
+        # Feedback is display only: both findings are stored as before, and the logged result
+        # of the record_finding call has no status key.
+        stored = [f for f in load_findings(conn, case_id=case.id) if f.origin == "model"]
+        assert sorted(f.verified is True for f in stored) == [False, True]
+        assert len(res.unverified_finding_ids) == 1
+        (logged,) = conn.execute(
+            "SELECT result FROM tool_call WHERE case_id = %s AND tool = 'record_finding' "
+            "ORDER BY started_at LIMIT 1",
+            (case.id,),
+        ).fetchone()
+        assert "status" not in logged
 
 
 # ---------------------------------------------------------------- budgets

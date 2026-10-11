@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 from tangible.agent.tools.runtime import ToolContext, ToolError, ToolSpec, register
+from tangible.agent.verify import verify_numbers
 from tangible.checks.registry import FindingDraft
 from tangible.db.findings import insert_finding
 
@@ -54,6 +55,28 @@ def record_finding(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def verification_feedback(ctx: ToolContext, result: dict[str, Any]) -> str:
+    """What the model is told after record_finding. Display only; nothing here is stored.
+
+    Re-runs the (pure) verifier on the same cited results `_insert` used, so the text agrees
+    with the stored `verified` flag.
+    """
+    if ctx.verifier is None:
+        return "recorded"
+    cited = _cited(ctx, result["tool_call_ids"])
+    if ctx.verifier(result["summary"], cited):
+        return "recorded; verified"
+    unmatched = verify_numbers(result["summary"], cited).unmatched
+    if not unmatched:
+        return "recorded; UNVERIFIED"
+    return (
+        "recorded; UNVERIFIED: numbers not found in cited results: "
+        + ", ".join(dict.fromkeys(unmatched))
+        + ". This finding stays on file marked unverified. If it matters, compute those numbers "
+        "with run_analysis or query_ledger and record a corrected finding citing that call."
+    )
+
+
 def _insert(ctx: ToolContext, call_id: str, result: Any) -> None:
     ids: list[str] = result["tool_call_ids"]
     verified: bool | None = None
@@ -79,7 +102,12 @@ register(
         "record_finding",
         1,
         "Record a finding for the analyst. Cite the tool_call_ids (successful calls in this case) "
-        "whose results support it. You cannot set bands, limits or numbers; policy decides those.",
+        "whose results support it. Every number in the summary must appear in a cited result; "
+        "compute derived numbers first with run_analysis or query_ledger and cite that call. "
+        "The result says 'recorded; verified' or 'recorded; UNVERIFIED: numbers not found in "
+        "cited results: ...'. Record only findings that raise or lower risk or need analyst "
+        "action, not 'checked and clean' ones. You cannot set bands, limits or numbers; policy "
+        "decides those.",
         {
             "type": "object",
             "properties": {
