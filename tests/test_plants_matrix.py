@@ -4,6 +4,7 @@ clean data raises nothing above info, and policy blocks a decision exactly when 
 Regression gate for every later wave: change a check or metric, and this must still pass.
 """
 
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 
@@ -13,10 +14,13 @@ import tangible.checks  # noqa: F401  (registers checks)
 import tangible.metrics  # noqa: F401  (registers metrics)
 from tangible.checks.registry import FindingDraft, run_check
 from tangible.checks.sets import check_set
+from tangible.datasets.synthetic import Profile, generate
+from tangible.ledger.csv_dir import read_ledger_dir
 from tangible.ledger.types import Ledger
 from tangible.metrics import compute
 from tangible.metrics.sets import metric_set
 from tangible.policy import FindingInput, evaluate, load_policy
+from test_synthetic import write_lines
 
 POLICY = Path(__file__).parent.parent / "policies/default.yaml"
 RANK = {"info": 0, "review": 1, "hold": 2}
@@ -95,3 +99,69 @@ def test_books_vs_processor_v2_does_not_judge_a_month_before_it_settles(
     assert run_check("books_vs_processor", 2, ledger, as_of) == []
     assert ("books_vs_processor", 1) in check_set("cs-3")
     assert ("books_vs_processor", 2) in check_set("cs-4")
+
+
+# ---------------------------------------------------------------- distinct borrower identities
+
+PROFILE = Profile(
+    account_ref="GB-ZZZ-001",
+    processor_name="STRIPE PAYMENTS UK",
+    processor_source="stripe",
+    owner_account="ADA QUILL PERSONAL",
+    lender_name="TALLOW STREET CAPITAL",
+    marketplace_name="AMAZON PAYMENTS UK",
+    bank_name="FENLAND BANK PLC",
+    landlord="STATION YARD LTD",
+    supplier_names=tuple(f"SUPPLIER {i} LTD" for i in range(7)),
+)
+
+
+@pytest.fixture(scope="module")
+def profiled_ledger(tmp_path_factory: pytest.TempPathFactory) -> Callable[..., Ledger]:
+    """Like the `synthetic_ledger` fixture, but for a merchant with a non-default identity."""
+    cache: dict[frozenset[str], Ledger] = {}
+
+    def make(plant: Iterable[str] = ()) -> Ledger:
+        key = frozenset(plant)
+        if key not in cache:
+            root = tmp_path_factory.mktemp("profiled")
+            lines = write_lines(root / "lines.csv", days=200)
+            generate(lines, root / "out", seed=7, plant=key, profile=PROFILE)
+            cache[key] = read_ledger_dir(root / "out", lines)
+        return cache[key]
+
+    return make
+
+
+def test_clean_with_a_distinct_profile_raises_nothing_above_info(
+    profiled_ledger: Callable[..., Ledger],
+) -> None:
+    ledger = profiled_ledger()
+    findings = all_findings(ledger, as_of_for(ledger))
+    assert [(f.check_key, f.severity) for f in findings if f.severity != "info"] == []
+
+
+@pytest.mark.parametrize("plant", sorted(EXPECTED))
+def test_plant_is_caught_with_a_distinct_profile(
+    profiled_ledger: Callable[..., Ledger], plant: str
+) -> None:
+    """The checks key on names (processor and marketplace keywords, OWNER DRAWINGS, lender
+    words); a renamed merchant must trip the same check at the same severity."""
+    ledger = profiled_ledger(plant={plant})
+    findings = all_findings(ledger, as_of_for(ledger))
+    key, severity = EXPECTED[plant]
+    hits = [f for f in findings if f.check_key == key]
+    assert hits and max((f.severity for f in hits), key=RANK.__getitem__) == severity, [
+        (f.check_key, f.severity) for f in findings
+    ]
+    assert all(f.evidence_refs for f in hits)
+    holds = {f.check_key for f in findings if f.severity == "hold"}
+    assert holds <= ({key} if severity == "hold" else set())
+    if plant == "undisclosed_lender_debit":
+        assert hits[0].facts["counterparty"] == "TALLOW STREET CAPITAL"
+        assert hits[0].facts["lender_like_name"] == "true"
+    if plant == "self_transfer_revenue":
+        assert hits[0].facts["counterparties"] == "ADA QUILL PERSONAL"
+    if plant == "partial_coverage":
+        assert hits[0].facts["unconnected_sources"] == "AMAZON"
+        assert hits[0].facts["connected_sources"] == "STRIPE"

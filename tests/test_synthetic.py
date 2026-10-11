@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import random
 from collections import Counter
@@ -8,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tangible.datasets.synthetic import PLANTS, generate
+from tangible.datasets.synthetic import PLANTS, Profile, generate
 from tangible.datasets.uci_retail import CSV_COLUMNS
 
 PRICES = ["2.50", "3.95", "4.25", "5.10", "6.75", "7.95", "9.50", "12.00", "14.25", "18.00"]
@@ -352,3 +353,89 @@ def test_trade_suppliers_pay_late_about_one_in_eight(tmp_path: Path) -> None:
     late = sum(1 for r in paid if r["paid_on"] > r["due_on"])
     assert len(paid) > 100
     assert 0.05 <= late / len(paid) <= 0.20
+
+
+# ----------------------------------------------------------------------------- profiles
+
+# SHA-256 over every output file (name, then bytes) of the default profile on write_lines(days=80)
+# with seed 7. These were taken before profiles existed, so they pin the original output: if one
+# changes, the default merchant's data changed and every backtest number with it.
+GOLDEN_CLEAN = "ea28fa72e9e03f7209e97da52feb98f96f8b8fa65ff96e715adaa16846551986"
+GOLDEN_ALL_PLANTS = "187ac428880694e9a12addcb6a516849253358b8d8c26d186e8f70b44c2af7a8"
+
+
+def digest(out: Path) -> str:
+    h = hashlib.sha256()
+    for path in sorted(out.iterdir()):
+        h.update(path.name.encode() + b"\0" + path.read_bytes() + b"\0")
+    return h.hexdigest()
+
+
+def test_default_profile_reproduces_the_original_output_byte_for_byte(
+    lines: Path, tmp_path: Path
+) -> None:
+    assert digest(run(lines, tmp_path, "clean")) == GOLDEN_CLEAN
+    assert digest(run(lines, tmp_path, "all", plant=set(PLANTS))) == GOLDEN_ALL_PLANTS
+    explicit = tmp_path / "explicit"
+    generate(lines, explicit, seed=7, plant=frozenset(PLANTS), profile=Profile())
+    assert digest(explicit) == GOLDEN_ALL_PLANTS
+
+
+PROFILE = Profile(
+    account_ref="GB-ZZZ-001",
+    processor_name="STRIPE PAYMENTS UK",
+    processor_source="stripe",
+    owner_account="ADA QUILL PERSONAL",
+    lender_name="TALLOW STREET CAPITAL",
+    marketplace_name="AMAZON PAYMENTS UK",
+    bank_name="FENLAND BANK PLC",
+    landlord="STATION YARD LTD",
+    supplier_names=tuple(f"SUPPLIER {i} LTD" for i in range(7)),
+)
+DEFAULT_NAMES = (
+    "GB-OPS-001", "SHOPIFY", "J SMITH", "YRDEAL", "NORTHVALE", "HOLLOWAY", "HARBOUR GIFTWARE",
+    "NORTHGATE PAPERCRAFT", "LANTERN IMPORTS", "EASTWIND", "BRIGHTWELL WHOLESALE", "MERIDIAN",
+    "KESTREL DISTRIBUTION",
+)  # fmt: skip
+
+
+def money_rows(out: Path, table: str, cols: tuple[str, ...]) -> list[tuple[str, ...]]:
+    return sorted(tuple(r[c] for c in cols) for r in load(out, table))
+
+
+def test_a_profile_renames_everything_and_changes_nothing_else(lines: Path, tmp_path: Path) -> None:
+    base = run(lines, tmp_path, "base", plant=set(PLANTS))
+    out = tmp_path / "renamed"
+    generate(lines, out, seed=7, plant=frozenset(PLANTS), profile=PROFILE)
+
+    text = "".join(p.read_text() for p in sorted(out.iterdir()))
+    for name in DEFAULT_NAMES:
+        assert name not in text, name
+    for name in (
+        "GB-ZZZ-001", "STRIPE PAYMENTS UK", "ADA QUILL PERSONAL", "TALLOW STREET CAPITAL",
+        "AMAZON PAYMENTS UK", "FENLAND BANK PLC", "STATION YARD LTD", "SUPPLIER ",
+        "STRIPE PAYOUT PO-",
+    ):  # fmt: skip
+        assert name in text, name
+    assert {r["processor"] for r in load(out, "payout")} == {"stripe"}
+    assert any(r["source"] == "stripe" for r in load(out, "evidence_pull"))
+    planted = (out / "planted.json").read_text()
+    assert "YRDEAL" not in planted and "TALLOW STREET CAPITAL" in planted
+
+    # Names change; amounts, dates and counts do not (each component has its own random stream).
+    for table, cols in (
+        ("bank_txn", ("posted_on", "direction", "amount")),
+        ("payout", ("source_ref", "amount", "fees", "settled_on")),
+        ("invoice", ("source_ref", "kind", "amount", "issued_on", "paid_on")),
+        ("account_balance", ("source_ref", "balance")),
+        ("inventory_snapshot", ("source_ref", "units_on_hand", "unit_cost")),
+    ):
+        assert money_rows(out, table, cols) == money_rows(base, table, cols), table
+    assert {r["account_ref"] for r in load(out, "bank_txn")} == {"GB-ZZZ-001"}
+
+
+def test_profile_rejects_a_wrong_supplier_list() -> None:
+    with pytest.raises(ValueError, match="needs 7 names"):
+        Profile(supplier_names=("A LTD", "B LTD"))
+    with pytest.raises(ValueError, match="distinct"):
+        Profile(supplier_names=("A LTD",) * 7)
