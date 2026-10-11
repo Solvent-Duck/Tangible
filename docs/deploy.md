@@ -45,6 +45,7 @@ The hosted API has no Bedrock credentials, so live agent runs happen locally. Th
    - `TANGIBLE_DATABASE_URL=.../tangible_demo`
    - `--store data/hosted-evidence`
    - `--base-url <web origin>` and `TANGIBLE_PUBLIC_URL=<web origin>`
+   - `--lender-name "<lender>"` (the name invited businesses see)
    - `--link-subject <clerk id>`
    - `--link-analyst <second clerk id>`, if you want the analyst persona hosted
 
@@ -59,7 +60,7 @@ The hosted API has no Bedrock credentials, so live agent runs happen locally. Th
 3. **Upload the raw evidence files**, so Trace to source resolves:
 
    ```bash
-   tar -C data/hosted-evidence -czf - . | railway ssh --service workbench -- sh -c 'mkdir -p /data/evidence && tar -C /data/evidence -xzf -'
+   COPYFILE_DISABLE=1 tar -C data/hosted-evidence -czf - . | railway ssh --service workbench -- sh -c 'mkdir -p /data/evidence && tar -C /data/evidence -xzf -'
    ```
 
 4. **Point the API at the new database:** set `TANGIBLE_DATABASE_URL` to the same URL with the database name changed. Setting it redeploys the API. Earlier databases stay as they were, so going back is a variable change.

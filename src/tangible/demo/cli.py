@@ -51,6 +51,10 @@ def main(argv: list[str] | None = None) -> None:
         help="also make this sign-in subject (a Clerk user id) the tenant's credit admin",
     )  # fmt: skip
     s.add_argument(
+        "--lender-name", default=None, metavar="NAME",
+        help="the tenant (lender) name shown to invited businesses (default: <name>-<stamp>)",
+    )  # fmt: skip
+    s.add_argument(
         "--link-analyst", default=None, metavar="SUBJECT",
         help="also make this sign-in subject the tenant's analyst, with the cases assigned to it",
     )  # fmt: skip
@@ -79,6 +83,7 @@ def main(argv: list[str] | None = None) -> None:
             name=args.name, end_on=args.end_on, store=args.store, work=args.work,
             lines=args.lines, run_agent=args.run_agent, base_url=args.base_url,
             link_subject=args.link_subject, link_analyst=args.link_analyst,
+            lender_name=args.lender_name,
         )  # fmt: skip
     except SeedError as e:
         print(f"tangible-demo: {e}", file=sys.stderr)

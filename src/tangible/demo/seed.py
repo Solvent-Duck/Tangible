@@ -565,6 +565,7 @@ def seed_demo(
     log: Callable[[str], None] = print,
     link_subject: str | None = None,
     link_analyst: str | None = None,
+    lender_name: str | None = None,
 ) -> SeedSummary:
     if run_agent:
         # The model vendor is named only in agent/llm.py; here we just insist on a real backend
@@ -588,7 +589,8 @@ def seed_demo(
             raise SeedError(f"{spec.name}: partition {spec.partition} not in 0..{n_partitions - 1}")
     requested = end_on or default_end_on()
     stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M")
-    tenant_name = f"{name}-{stamp}"
+    # The tenant is the lender: hosted demos show its name to invited businesses.
+    tenant_name = lender_name or f"{name}-{stamp}"
     settings = dataclasses.replace(Settings.from_env(), evidence_dir=store)
     if database_url:
         settings = dataclasses.replace(settings, database_url=database_url)
