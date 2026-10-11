@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRight, Clock3, Lock, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { RequestedList } from "@/components/app/requested-list";
 import { Logo } from "@/components/logo";
@@ -14,7 +14,7 @@ import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import { Notice, Skeleton } from "@/components/ui/misc";
 import { ApiError, useApi } from "@/lib/api";
-import { storeTenant, useAuthState } from "@/lib/auth-context";
+import { storeInvite, storeTenant, useAuthState } from "@/lib/auth-context";
 import type { InvitePreview } from "@/lib/types";
 import { date, money } from "@/lib/utils";
 
@@ -56,9 +56,15 @@ export default function InviteLanding() {
           />
         )}
         {preview.data && preview.data.state === "live" && <Live p={preview.data} token={token} />}
+        {preview.data && preview.data.state === "live" && <RememberInvite token={token} />}
       </main>
     </div>
   );
+}
+
+function RememberInvite({ token }: { token: string }) {
+  useEffect(() => storeInvite(token), [token]);
+  return null;
 }
 
 function Ended({ title, body }: { title: string; body: string }) {
@@ -128,12 +134,14 @@ function Join({ p, token }: { p: InvitePreview; token: string }) {
 }
 
 function AcceptCard({ p, token }: { p: InvitePreview; token: string }) {
+  const auth = useAuthState();
   const api = useApi();
   const router = useRouter();
   const accept = useMutation({
     mutationFn: () => api<{ tenant_id: string }>("/api/onboarding/accept", { json: { token } }),
     onSuccess: (r) => {
       storeTenant(r.tenant_id);
+      storeInvite(null);
       router.push("/onboarding");
     },
   });
@@ -149,6 +157,13 @@ function AcceptCard({ p, token }: { p: InvitePreview; token: string }) {
       <Button variant="primary" size="lg" className="mt-5 w-full" onClick={() => accept.mutate()} disabled={accept.isPending}>
         Continue <ArrowRight />
       </Button>
+      <p className="mt-4 text-[12.5px] text-muted">
+        Signed in with a lender staff account? The business needs its own account.{" "}
+        <button type="button" className="font-medium text-brand underline-offset-2 hover:underline" onClick={() => auth.signOut()}>
+          Sign out and create one
+        </button>
+        .
+      </p>
     </Card>
   );
 }
