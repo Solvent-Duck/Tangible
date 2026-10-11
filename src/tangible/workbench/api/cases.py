@@ -176,5 +176,5 @@ def sign(case_id: UUID, conn: ConnDep, p: PrincipalDep, settings: SettingsDep) -
 
 
 @router.post("/{case_id}/rebase", status_code=201)
-def rebase(case_id: UUID, conn: ConnDep, p: PrincipalDep) -> dict[str, Any]:
-    return services.rebase_case(conn, p, str(case_id))
+def rebase(case_id: UUID, conn: ConnDep, p: PrincipalDep, settings: SettingsDep) -> dict[str, Any]:
+    return services.rebase_case(conn, p, str(case_id), settings)

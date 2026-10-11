@@ -79,15 +79,38 @@
 
 <section aria-labelledby="d-h" id="documents">
 <h2 id="d-h">Documents</h2>
-{% if late %}
-<p class="flash flash-error" role="alert"><strong>Rebase required.</strong> {{ late }} uploaded document(s) arrived after this case's as_of and are invisible to it. Re-base to investigate with them.</p>
-<form method="post" action="/cases/{{ c.id }}/rebase"><button>Rebase case</button></form>
+{% if late and c.status != 'closed' %}
+<div class="flash flash-error" role="alert" id="rebase-needed">
+  <p><strong>{{ 'This document arrived' if late == 1 else late ~ ' documents arrived' }} after the case date.</strong> Rebase the case to include {{ 'it' if late == 1 else 'them' }}.</p>
+  <form method="post" action="/cases/{{ c.id }}/rebase">
+    <button>Rebase case</button>
+    <small>Opens a new case for the same borrower dated now and closes this one. Nothing is deleted: this case keeps its findings and reviews, and the new case reads the {{ 'document' if late == 1 else 'documents' }} when it is created.</small>
+  </form>
+</div>
 {% endif %}
+{% if documents %}
+<table id="doc-list"><caption class="sr">Uploaded documents</caption>
+<thead><tr><th scope="col">File</th><th scope="col">SHA-256</th><th scope="col">Observed (uploaded)</th><th scope="col">This case</th><th scope="col">Read</th></tr></thead>
+<tbody>{% for d in documents %}<tr>
+  <th scope="row">{{ d.filename }}<br><small>{{ d.byte_size }} bytes</small></th>
+  <td><code class="sha">{{ d.sha256 }}</code></td>
+  <td>{{ d.observed_at }}</td>
+  <td>{% if d.included %}included (arrived by the case date){% else %}<strong>not used</strong>: arrived after the case date{% endif %}</td>
+  <td>{% if d.read %}read{% elif d.read_error %}could not be read: {{ d.read_error }}{% else %}not read yet{% endif %}</td>
+</tr>{% endfor %}</tbody></table>
+{% else %}<p>No documents uploaded for this borrower yet.</p>{% endif %}
 {% if c.status != 'closed' %}
 <form method="post" action="/cases/{{ c.id }}/documents" enctype="multipart/form-data">
   <label for="file">Upload a document</label>
   <input id="file" type="file" name="file" required>
+  {% if c.status in ('open', 'planning') %}
+  <button name="rebase" value="1">Upload and rebase</button>
+  <button>Upload only</button>
+  <p><small>An upload is observed when it arrives, which is after this case's date, so it only counts in a rebased case. "Upload and rebase" does both in one step; it is offered while the case has no reviews to lose.</small></p>
+  {% else %}
   <button>Upload</button>
+  <p><small>This case has work in progress, so uploading does not rebase it. You will be asked to rebase as a separate step.</small></p>
+  {% endif %}
 </form>
 {% endif %}
 </section>

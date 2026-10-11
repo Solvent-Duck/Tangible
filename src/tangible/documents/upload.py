@@ -38,3 +38,9 @@ def store_upload(
         (pull_id, tenant_id, borrower_id, SOURCE, datetime.now(UTC), key, sha, len(data)),
     )
     return pull_id
+
+
+def display_name(s3_key: str) -> str:
+    """The sanitised file name in a stored key `<tenant>/<borrower>/uploads/<sha16>-<name>`."""
+    base = s3_key.rsplit("/", 1)[-1]
+    return base[17:] if len(base) > 17 and base[16] == "-" else base

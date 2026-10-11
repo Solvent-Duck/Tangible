@@ -152,11 +152,13 @@ def test_role_filtering(stack: Stack) -> None:  # noqa: F811
 def test_rebase_notice_after_upload(stack: Stack) -> None:  # noqa: F811
     case_id = make_case(stack)
     plan_and_investigate(stack, case_id)
-    assert "Rebase required" not in ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
+    assert "after the case date" not in ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
     files = {"file": ("s.csv", b"date,amount\n2020-01-01,5\n", "text/csv")}
     ui(stack, "POST", f"/cases/{case_id}/documents", "ana", 303, files=files)
     page = ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
-    assert "Rebase required" in page and "Rebase case" in page
+    assert "This document arrived after the case date." in page
+    assert "Rebase the case to include it." in page and "Rebase case</button>" in page
+    assert "s.csv" in page and "SHA-256" in page  # the document list shows the file and its hash
     r = post(stack, f"/cases/{case_id}/rebase", "ana")
     assert r.headers["location"] != f"/cases/{case_id}"
 

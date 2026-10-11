@@ -458,12 +458,13 @@ def case_page(
     request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal, settings: SettingsDep
 ) -> Response:
     d = services.get_case_detail(conn, p, _id(case_id), settings)
+    documents = services.case_documents(conn, p, _id(case_id)) if p.role == "analyst" else []
     groups = [(sev, [f for f in d["findings"] if f["severity"] == sev]) for sev in SEVERITY_ORDER]
     return render(
         request, "case.html", p, c=d,
         groups=[(s, fs) for s, fs in groups if fs],
         metrics=queries.case_metrics(conn, d["borrower_id"], d["as_of"]),
-        late=queries.late_uploads(conn, d["borrower_id"], d["as_of"]),
+        documents=documents, late=sum(1 for x in documents if not x["included"]),
         plan=_latest_plan(d), is_analyst=p.role == "analyst",
     )  # fmt: skip
 
@@ -627,11 +628,17 @@ def upload(
     p: UiPrincipal,
     settings: SettingsDep,
     file: Annotated[UploadFile | None, File()] = None,
+    rebase: Annotated[str, Form()] = "",
 ) -> Response:
     if file is None:
         raise services.Invalid("choose a file to upload")
     data = file.file.read(settings.max_upload_bytes + 1)
-    res = services.upload_document(conn, settings, p, _id(case_id), file.filename or "", data)
+    name = file.filename or ""
+    if rebase == "1":  # "Upload and rebase": one transaction, so nothing is half done
+        new = services.upload_and_rebase(conn, settings, p, _id(case_id), name, data)
+        return redirect(f"/cases/{new['id']}#documents", _rebase_message(new, uploaded=True),
+                        "error" if new["documents_unread"] else "ok")  # fmt: skip
+    res = services.upload_document(conn, settings, p, _id(case_id), name, data)
     return redirect(f"/cases/{case_id}#documents", res["note"])
 
 
@@ -666,11 +673,25 @@ def sign(
     return redirect(f"/assessments/{res['assessment_id']}", "Signed. The assessment is frozen.")
 
 
+def _rebase_message(new: dict[str, Any], *, uploaded: bool = False) -> str:
+    msg = "Uploaded and re-based: " if uploaded else "Re-based: "
+    msg += "this is the new case, dated now; the old one is closed."
+    n = new["documents_read"]
+    if n:
+        msg += f" {n} document(s) read; the baseline checks will compare them with the ledger."
+    for u in new["documents_unread"]:
+        msg += f" Could not read {u['filename'] or u['pull_id']}: {u['error']}."
+    return msg
+
+
 @router.post("/cases/{case_id}/rebase")
 @guarded
-def rebase(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) -> Response:
-    new = services.rebase_case(conn, p, _id(case_id))
-    return redirect(f"/cases/{new['id']}", "Re-based: this is the new case; the old one is closed.")
+def rebase(
+    request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal, settings: SettingsDep
+) -> Response:
+    new = services.rebase_case(conn, p, _id(case_id), settings)
+    return redirect(f"/cases/{new['id']}#documents", _rebase_message(new),
+                    "error" if new["documents_unread"] else "ok")  # fmt: skip
 
 
 @router.get("/cases/{case_id}/findings/{finding_id}/trace", response_class=HTMLResponse)
