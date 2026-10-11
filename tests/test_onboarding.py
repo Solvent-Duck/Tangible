@@ -156,7 +156,9 @@ def test_invite_to_case_end_to_end(on: On) -> None:
     assert pv["business_name"] == "Acme Hardware"
     assert {"bank", "stock_report", "custom-1"} <= {i["id"] for i in pv["items"]}
     on.call("GET", f"/api/onboarding/invite/{token}", None, 200)
-    assert on.call("GET", f"/api/invites/{sent['id']}", "adm", 200)["stage"] == "opened"
+    detail = on.call("GET", f"/api/invites/{sent['id']}", "adm", 200)
+    assert detail["stage"] == "opened" and detail["email"] == "owner@acme.test"
+    assert token in detail["sent_email"]["body_text"]
 
     # Accept: a borrower user appears; accepting again is a no-op.
     acc = on.accept(token, "owner")

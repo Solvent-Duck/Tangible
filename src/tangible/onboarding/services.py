@@ -463,7 +463,7 @@ def invite_detail(conn: Conn, p: Principal, invite_id: str) -> dict[str, Any]:
                 "items": _coverage(inv, events, profile),
                 "profile": profile,
                 "events": events,
-                "email": dict(
+                "sent_email": dict(
                     zip(
                         (
                             "id",

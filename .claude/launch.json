@@ -4,7 +4,13 @@
     {
       "name": "workbench",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["TANGIBLE_DEV_AUTH=1", "TANGIBLE_EVIDENCE_DIR=.evidence", "uv", "run", "tangible-workbench"],
+      "runtimeArgs": [
+        "TANGIBLE_DEV_AUTH=1",
+        "TANGIBLE_EVIDENCE_DIR=.evidence",
+        "uv",
+        "run",
+        "tangible-workbench"
+      ],
       "port": 8000
     },
     {
@@ -21,15 +27,59 @@
         "AWS_PROFILE=tangible",
         "TANGIBLE_WEB_PROVIDER=fixtures",
         "TANGIBLE_PORT=8001",
-        "uv", "run", "--with", "botocore[crt]", "tangible-workbench"
+        "uv",
+        "run",
+        "--with",
+        "botocore[crt]",
+        "tangible-workbench"
       ],
       "port": 8001
     },
     {
       "name": "workbench-design",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["TANGIBLE_DEV_AUTH=1", "TANGIBLE_EVIDENCE_DIR=.evidence", "TANGIBLE_WEB_PROVIDER=fixtures", "TANGIBLE_PORT=8002", "uv", "run", "tangible-workbench"],
+      "runtimeArgs": [
+        "TANGIBLE_DEV_AUTH=1",
+        "TANGIBLE_EVIDENCE_DIR=.evidence",
+        "TANGIBLE_WEB_PROVIDER=fixtures",
+        "TANGIBLE_PORT=8002",
+        "uv",
+        "run",
+        "tangible-workbench"
+      ],
       "port": 8002
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TANGIBLE_DEV_AUTH=1",
+        "TANGIBLE_EVIDENCE_DIR=.evidence",
+        "TANGIBLE_WEB_PROVIDER=fixtures",
+        "TANGIBLE_PUBLIC_URL=http://localhost:3000",
+        "TANGIBLE_PORT=8010",
+        "uv",
+        "run",
+        "tangible-workbench"
+      ],
+      "port": 8010
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TANGIBLE_API_URL=http://127.0.0.1:8010",
+        "NEXT_PUBLIC_AUTH_MODE=dev",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3000"
+      ],
+      "port": 3000
     }
   ]
 }
