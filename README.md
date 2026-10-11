@@ -24,17 +24,47 @@ Seed a demo tenant (five synthetic borrowers dated to the last week, users ana/a
 make demo
 ```
 
+## The agent team, on Strands Agents
+
+The investigation runs on the [Strands Agents SDK](https://strandsagents.com) (`TANGIBLE_AGENT_ENGINE=strands`, the default; `classic` keeps the original hand-written loop as a fallback and a test oracle).
+
+```
+approve plan ─► Strands Graph "intangibles_search" (parallel)
+                  presence_agent · loyalty_agent · reputation_agent   web tools only, small step caps
+                         │ reports, quoted as untrusted data
+                         ▼
+                lead_investigator   ledger, checks, metrics, sandbox, documents, findings
+every agent:  ModelClientModel  → agent/llm.py (Bedrock Converse, prompt caching, cost per call)
+              TangibleGuardrails → Strands hooks enforcing the invariants below
+                         ▼
+ms-3 metrics (pure, versioned) ─► policy 0.4.0: knockout → bands → uplift (≤ 1 notch) → review cap
+```
+
+- **Custom model provider.** `strands_engine/model.py` is a Strands `Model` over our own `ModelClient`, so every model call still goes through `agent/llm.py`: one `model_call` row with its cost per step, Bedrock prompt caching, and scripted clients that drive Strands offline in tests.
+- **Invariants as hooks.** `strands_engine/guardrails.py` is where "the agent investigates, tools compute, policy decides" is enforced: shared step and cost budgets (`BeforeModelCallEvent`), each agent limited to its own tools (`BeforeToolCallEvent`), every tool result quoted as untrusted data (`AfterToolCallEvent`), and wrap-up notices (`AfterToolsEvent`). Tools still run through `call_tool`, which validates the call and leaves an audit row.
+- **A Graph of search agents.** Three agents look the business up in public sources in parallel. They match listings with a deterministic scorer they cannot override, record signals, and never score anything. A same-name listing in another city is refused, and a stranger's 5-star reputation never reaches the metrics.
+- **Parity.** `tests/test_agent_loop.py` runs on both engines. `tests/test_strands_engine.py` checks that the model sees byte-identical prompts, tool schemas and results on both, and that tool calls, findings and cost come out the same.
+
+**Demo (about 90 seconds).** Seed the tenant (`make demo`), serve it with the `workbench-strands` launch config, and sign in as `ana`.
+1. Open **Juniper & Rye Bakery LLC**: propose the plan, approve it, then run the investigation. The status card's live feed shows the presence, loyalty and reputation agents working in parallel, then the lead investigator.
+2. When it finishes, **Public signals** lists the matched Google, Yelp and domain records with their match scores, and **Agent run** shows the Strands team with each agent's steps and tool calls.
+3. Sign it. The assessment reads "uplift C→B via loyalty: repeat_customer_share … loyalty_mention_share …". Reputation was computed but shows as disabled by policy, because ratings have no history to backtest.
+4. Open **Northgate Phone Repair LLC** and run it. The same-name Spokane shop scores 0.40 and `record_signal` refuses it, even though its review text tries to talk the agent into claiming it.
+
+Env for a live run: `TANGIBLE_MODEL_BACKEND=bedrock TANGIBLE_SIGNAL_PROVIDER=fixtures` plus the Bedrock settings in the Makefile `demo` comment. One case costs about $0.80 on Claude Sonnet 4.5.
+
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `src/tangible/db/` | Plain SQL migrations 0001–0008 (schema, RLS, immutability triggers), tenant sessions, repositories. Applied by `tangible-migrate`. |
+| `src/tangible/db/` | Plain SQL migrations 0001–0009 (schema, RLS, immutability triggers), tenant sessions, repositories. Applied by `tangible-migrate`. |
 | `src/tangible/ledger/` | Ledger row types and `known_as_of`, the single place the `observed_at` time rule lives. |
 | `src/tangible/ingest/`, `src/tangible/datasets/` | Load data into the ledger (`tangible-ingest`); UCI Online Retail loader and a synthetic generator with planted problems. |
 | `src/tangible/metrics/` | 23 versioned pure metrics (health and momentum), pinned as set `ms-2`. |
 | `src/tangible/checks/` | 17 versioned integrity checks (reconciliation, completeness, tampering, documents), pinned as set `cs-4` (`books_vs_processor` v2 waits for settlement); they emit findings. |
 | `src/tangible/policy/` | Policy loader (version + hash), typed schema, evaluator (band and limit) and review state. |
 | `src/tangible/assessment/` | Baseline, freeze and replay of an assessment (`tangible-replay`). |
+| `src/tangible/agent/strands_engine/` | The Strands Agents engine: model provider, guardrail hooks, the search-team Graph. |
 | `src/tangible/agent/` | Investigation loop: plan, analyst approval, then a step- and cost-budgeted tool run. Eight logged tools, an analysis sandbox, a number verifier (the agent is told which numbers did not verify and can record a correction that replaces the earlier finding) and versioned prompts (`plan@v3`, `investigate@v4`). `llm.py` is the only vendor-aware module (Bedrock Converse). |
 | `src/tangible/documents/`, `src/tangible/web/` | Uploaded PDF statements (text, file traits, model reader) and allow-listed web lookups. Both are untrusted data. |
 | `src/tangible/evidence/`, `src/tangible/secrets/` | Raw evidence store (local directory, or S3 with Object Lock and SSE-KMS) and connector tokens (environment or Secrets Manager). |
