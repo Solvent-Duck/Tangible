@@ -113,3 +113,28 @@ def test_counts_after_non_unit_words_still_checked() -> None:
 def test_derived_percent_flagged_alone() -> None:
     r = verify_numbers("26.0% (41278.16 of 158975.11)", [{"a": 41278.16, "b": 158975.11}])
     assert not r.ok and r.unmatched == ("26.0%",) and r.checked == 3
+
+
+def test_full_precision_claim_against_large_values_does_not_raise() -> None:
+    text = "aged_stock_share: 0.8024050297982365579989458011 of stock worth 28,800.00"
+    pool = [{"aged_stock_share": "0.8024050297982365579989458011", "value": "28800.00"}]
+    assert verify_numbers(text, pool).ok
+    assert verify_numbers(text, [{"value": "123456789012.50"}]).unmatched == (
+        "0.8024050297982365579989458011",
+        "28,800.00",
+    )
+
+
+def test_whole_currency_amount_matches_rounded_value_but_bare_count_is_exact() -> None:
+    pool = [{"revenue": "136831.92", "orders": 199}]
+    assert verify_numbers("revenue of GBP 136,832 and £136,832", pool).ok
+    assert verify_numbers("199 orders", pool).ok
+    assert verify_numbers("136832 orders", pool).unmatched == ("136832",)
+
+
+def test_hyphenated_reference_ids_are_not_claims() -> None:
+    assert verify_numbers("invoice INV-574941 and PO-1182", []).ok
+
+
+def test_window_ranges_are_not_claims() -> None:
+    assert verify_numbers("lag 31-60 days ago and 61–90 days ago", []).ok
