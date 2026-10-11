@@ -79,15 +79,15 @@ function Hero() {
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-[0.55] [background-image:radial-gradient(var(--border)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_at_top,black_35%,transparent_75%)]"
       />
-      <div className="relative mx-auto grid max-w-6xl gap-12 px-4 pt-16 pb-20 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:pt-24 lg:pb-28">
-        <div>
-          <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[12.5px] text-muted shadow-card">
+      <div className="relative mx-auto grid max-w-6xl grid-cols-1 gap-12 px-4 pt-16 pb-20 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:pt-24 lg:pb-28">
+        <div className="min-w-0">
+          <p className="inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-[12.5px] text-muted shadow-card">
             <span className="size-1.5 rounded-full bg-brand" />
             Operational due diligence for small-business lenders
           </p>
-          <h1 className="mt-6 font-display text-[44px] leading-[1.02] tracking-tight text-ink sm:text-[60px]">
-            Underwrite the business,
-            <br />
+          <h1 className="mt-6 font-display text-[40px] leading-[1.04] tracking-tight text-ink sm:text-[60px]">
+            Underwrite the business,{" "}
+            <br className="hidden sm:block" />
             <em className="text-brand">not just the bank statement.</em>
           </h1>
           <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-muted">
@@ -121,7 +121,7 @@ function Hero() {
 
 function HeroVisual() {
   return (
-    <div className="relative mx-auto w-full max-w-[520px]">
+    <div className="relative mx-auto w-full max-w-[520px] min-w-0">
       <div className="absolute -inset-6 -z-10 rounded-[28px] bg-gradient-to-br from-brand-soft via-transparent to-transparent blur-2xl" />
       <div className="rounded-2xl border border-line bg-surface p-5 shadow-pop">
         <div className="flex items-center justify-between">

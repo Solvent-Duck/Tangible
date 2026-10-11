@@ -178,19 +178,102 @@ export type CaseRow = {
   assessment: { id: string; band: string; limit: string | null } | null;
 };
 
+export type ReviewAction = { action: string; reason: string; by: string; at: string };
+
 export type Finding = {
   id: string;
-  check_key?: string;
-  key?: string;
+  check_key: string;
+  check_version: number;
+  origin: string;
   severity: "hold" | "review" | "info";
-  pillar?: string;
-  title?: string;
-  summary?: string;
-  detail?: Record<string, unknown>;
+  direction: string;
+  pillar: string;
+  summary: string;
+  evidence_refs: string[];
+  facts: Record<string, unknown>;
+  tool_call_ids: string[];
+  verified: boolean | null;
+  unmatched_numbers: string[] | null;
+  case_id: string | null;
+  replaces_id: string | null;
+  replaced: boolean;
+  corrections: Finding[];
+  review_state: string;
+  actions: ReviewAction[];
+};
+
+export type Plan = {
+  id: string;
+  version: number;
+  body: {
+    business_model?: string;
+    notes?: string;
+    risks?: { risk: string; why?: string; checks?: string[]; metrics?: string[]; follow_up?: string }[];
+    [k: string]: unknown;
+  };
+  created_at: string;
+  approved: boolean;
+};
+
+export type RunNotices = {
+  last_failure: { at: string; error: string; message: string; restored_status: string } | null;
+  last_reset: { at: string; by: string; reason: string; restored_status: string } | null;
+  run: {
+    started_at: string | null;
+    age_minutes: number | null;
+    stuck_after_min: number;
+    stuck: boolean;
+    restores_to: string;
+  } | null;
+};
+
+export type CaseStatus = { id: string; status: string } & Partial<RunNotices>;
+
+export type Metric = { key: string; version: number; value: string | null; label: string; text: string | null };
+
+export type AssessmentSummary = {
+  id: string;
+  borrower_id: string;
+  as_of: string;
+  decision_band: string | null;
+  suggested_limit: string | null;
+  policy_version: string;
+  created_at: string;
+  created_by: string;
+  case_id: string | null;
+  overrides: { id: string; by: string; reason: string; at: string }[];
   [k: string]: unknown;
 };
 
-export type Workspace = {
+export type Assessment = AssessmentSummary & {
+  borrower: string;
+  evidence_set_hash: string;
+  metric_set_version: string;
+  policy_hash: string;
+  model_id: string | null;
+  rules_fired: { rule: string; step: string; saw?: unknown; op?: string; threshold?: unknown; outcome: string; [k: string]: unknown }[];
+  metrics: Metric[];
+  findings: Finding[];
+  can_override: boolean;
+  can_replay: boolean;
+};
+
+export type Trace = {
+  finding: Finding;
+  tool_calls: {
+    id: string;
+    tool: string;
+    version: number;
+    args: unknown;
+    result: unknown;
+    error: string | null;
+    started_at: string;
+    duration_ms: number | null;
+  }[];
+  evidence: { ref: string; line: unknown; error: string | null }[];
+};
+
+export type Workspace = Partial<RunNotices> & {
   id: string;
   borrower_id: string;
   borrower: string;
@@ -202,12 +285,12 @@ export type Workspace = {
   status: string;
   previous_case_id: string | null;
   findings: Finding[];
-  assessments: { id: string; decision_band: string; suggested_limit: string | null; [k: string]: unknown }[];
-  plans?: { id: string; version: number; body: Record<string, unknown>; approved_at?: string | null; [k: string]: unknown }[];
-  questions?: { id: string; [k: string]: unknown }[];
+  assessments: AssessmentSummary[];
+  plans?: Plan[];
+  questions?: { id: string; body: string; created_at: string; approved: boolean; sent: boolean }[];
   usage?: { model_calls: number; cost_usd: string; priced: boolean; cost_text: string };
-  last_investigation?: Record<string, unknown> | null;
-  metrics: { key: string; version: number; value: string | null; label: string; text: string | null }[];
+  last_investigation?: { stop_reason?: string; wrap_up?: string; at?: string; [k: string]: unknown } | null;
+  metrics: Metric[];
   documents: {
     pull_id: string;
     filename: string;
@@ -220,5 +303,4 @@ export type Workspace = {
   }[];
   late_uploads: number;
   viewer_role: Role;
-  [k: string]: unknown;
 };
