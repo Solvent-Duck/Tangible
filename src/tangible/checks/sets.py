@@ -33,6 +33,14 @@ CHECK_SETS["cs-4"] = tuple(
     for member in CHECK_SETS["cs-3"]
 )
 
+# cs-5: cs-4 plus the intangibles checks (docs/intangibles-plan.md, v1 slice).
+CHECK_SETS["cs-5"] = (
+    *CHECK_SETS["cs-4"],
+    ("listing_closed", 1),
+    ("review_volume_vs_orders", 1),
+    ("listing_identity_mismatch", 1),
+)
+
 
 def check_set(set_id: str) -> tuple[tuple[str, int], ...]:
     members = CHECK_SETS[set_id]
