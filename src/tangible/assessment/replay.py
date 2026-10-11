@@ -20,7 +20,7 @@ from tangible.db.repo import load_ledger
 from tangible.db.session import Conn
 from tangible.metrics import compute
 from tangible.metrics.sets import metric_set
-from tangible.policy import evaluate, load_policy
+from tangible.policy import Policy, evaluate, load_policy
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,26 @@ def _diff_findings(frozen: list[FindingDraft], fresh: list[FindingDraft]) -> lis
     return out
 
 
+def frozen_policy(policy_path: Path, frozen_hash: str) -> Policy:
+    """The policy an assessment was frozen under. `policy_path` is the current default; when its
+    hash differs, a policy file beside it with the frozen hash is used instead (older versions
+    are kept as e.g. policies/default-0.2.2.yaml). With no match, the given file is returned and
+    replay reports the policy change."""
+    current = load_policy(policy_path)
+    if current.sha256 == frozen_hash:
+        return current
+    for candidate in sorted(policy_path.parent.glob("*.yaml")):
+        if candidate.resolve() == policy_path.resolve():
+            continue
+        try:
+            older = load_policy(candidate)
+        except ValueError:
+            continue
+        if older.sha256 == frozen_hash:
+            return older
+    return current
+
+
 def replay(conn: Conn, assessment_id: str, policy_path: Path) -> ReplayReport:
     row = conn.execute(
         "SELECT borrower_id, as_of, evidence_set_hash, metric_set_version, policy_hash, "
@@ -73,7 +93,7 @@ def replay(conn: Conn, assessment_id: str, policy_path: Path) -> ReplayReport:
     borrower_id = str(borrower_id)
     diffs: list[str] = []
 
-    policy = load_policy(Path(policy_path))
+    policy = frozen_policy(Path(policy_path), policy_hash)
     assert policy.parsed is not None
 
     ledger = load_ledger(conn, borrower_id)
