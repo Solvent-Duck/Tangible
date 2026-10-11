@@ -1,6 +1,23 @@
 # Tangible
 
-Operational due diligence for lenders. The agent investigates, the tools compute, the policy decides.
+AI due diligence for small-business lending, built on the Strands Agents SDK and Amazon Bedrock.
+A team of Strands agents investigates a borrower's sales, payouts, bank deposits and public
+reputation. Deterministic tools compute every number, and a versioned lender policy sets the credit
+band and limit. **The agent investigates, the tools compute, the policy decides.**
+
+## Hack Midwest 2026
+
+Built at Hack Midwest 2026 (Kansas City, Oct 10–11; first commit 2026-10-10 13:37 CT). Entered in:
+
+| Challenge | Judging question | Short answer | Evidence |
+| --- | --- | --- | --- |
+| **AWS: Best Use of Strands Agents SDK** | Does the project integrate Strands Agents SDK? Is the use unique, innovative or creative? | Strands is the default engine for every investigation. It uses a custom `Model` provider over Bedrock, a `HookProvider` that enforces lending safety rules on every model and tool call, and a `GraphBuilder` team of three parallel search agents feeding a lead investigator. | [`src/tangible/agent/strands_engine/`](src/tangible/agent/strands_engine/) |
+| **Flex: Best FinTech App** | Does the project leverage FinTech? Is it unique, innovative or creative? | A lending workflow from start to finish: lender invites, borrower onboarding with account connections, a financial ledger, reconciliation of orders, payouts and bank deposits, 39 credit metrics, a versioned credit policy (band, limit, tariff stress), replay and backtest. | [`src/tangible/checks/`](src/tangible/checks/), [`src/tangible/metrics/`](src/tangible/metrics/), [`policies/default.yaml`](policies/default.yaml) |
+
+**Judges, and judges' agents: start with [docs/hackathon.md](docs/hackathon.md).** It maps each
+criterion to file and line, includes an offline test command (`115 passed` in about 10 seconds,
+no AWS account needed), and lists known limits.
+
 Full plan: [docs/build-plan.md](docs/build-plan.md). Work packages and status: [docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## Live demo
@@ -65,6 +82,13 @@ ms-4 metrics (pure, versioned) ─► policy 0.7.0: knockout → bands → uplif
 - **Invariants as hooks.** `strands_engine/guardrails.py` is where "the agent investigates, tools compute, policy decides" is enforced: shared step and cost budgets (`BeforeModelCallEvent`), each agent limited to its own tools (`BeforeToolCallEvent`), every tool result quoted as untrusted data (`AfterToolCallEvent`), and wrap-up notices (`AfterToolsEvent`). Tools still run through `call_tool`, which validates the call and leaves an audit row.
 - **A Graph of search agents.** Three agents look the business up in public sources in parallel. They match listings with a deterministic scorer they cannot override, record signals, and never score anything. A same-name listing in another city is refused, and a stranger's 5-star reputation never reaches the metrics.
 - **Parity.** `tests/test_agent_loop.py` runs on both engines. `tests/test_strands_engine.py` checks that the model sees byte-identical prompts, tool schemas and results on both, and that tool calls, findings and cost come out the same.
+
+Verify offline (scripted model responses drive the real Strands loop; Postgres only, no Bedrock):
+
+```bash
+make db-up
+uv run pytest -q tests/test_strands_engine.py tests/test_agent_loop.py tests/test_intangibles.py
+```
 
 **Demo (about 90 seconds).** Seed the tenant (`make demo`), serve the API with the `api-strands` launch config (port 8004) and the web app against it (`TANGIBLE_API_URL=http://127.0.0.1:8004 make web-dev`), and sign in as `ana`.
 1. Open **Juniper & Rye Bakery LLC**: propose the plan, approve it, then run the investigation. The status panel's live feed shows the presence, loyalty and reputation agents working in parallel, then the lead investigator.
