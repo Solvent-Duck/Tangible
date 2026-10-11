@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 
+from tangible.checks.reconciliation import SETTLE_WAIT_FLOOR_BDAYS, _bdays_between
 from tangible.checks.registry import REGISTRY, FindingDraft, run_check
 from tangible.ledger.evidence import EvidenceRef
 from tangible.ledger.types import (
@@ -544,3 +545,135 @@ def test_phantom_payouts_flags_orders_vs_payouts(synthetic_ledger):
 def test_other_plants_never_hold_here(synthetic_ledger, plant):
     results = run_all(synthetic_ledger(plant={plant}, days=200))
     assert [f for fs in results.values() for f in fs if f.severity == "hold"] == []
+
+
+# books_vs_processor v2: waits for settlement
+
+
+def run2(ledger: Ledger, as_of: datetime = AS_OF) -> list[FindingDraft]:
+    return run_check("books_vs_processor", 2, ledger, as_of)
+
+
+def may_ledger(*, last_sales_day: int = 31, pending_from: int | None = None) -> Ledger:
+    """May 2024: GBP 100 of card orders every day, one payout per sales day (expected the next
+    day, settled two days after that, GBP 100 with fees). Payouts exist for sales days
+    1..last_sales_day only, so with last_sales_day < 31 the month's last payouts are not in the
+    ledger yet. From `pending_from`, payouts are known but unsettled (no settled_on)."""
+    orders, payouts = [], []
+    for day in range(1, 32):
+        d = date(2024, 5, day)
+        orders.append(order(f"O{day}", "100", d))
+    for day in range(1, last_sales_day + 1):
+        expected = date(2024, 5, day) + timedelta(days=1)
+        if pending_from is not None and day >= pending_from:
+            payouts.append(
+                Payout(
+                    f"P{day}", "shopify", D("97"), D("3"), expected, None, at(expected),
+                    evidence=ev(),
+                )
+            )  # fmt: skip
+        else:
+            payouts.append(
+                payout(f"P{day}", "97", expected + timedelta(days=2), expected=expected, fees="3")
+            )
+    return Ledger(orders=tuple(orders), payouts=tuple(payouts))
+
+
+JUNE_6 = datetime(2024, 6, 6, 12, tzinfo=UTC)
+
+
+def test_v2_registered_and_v1_left_alone():
+    assert ("books_vs_processor", 1) in REGISTRY and ("books_vs_processor", 2) in REGISTRY
+
+
+def test_v2_waits_when_last_payouts_have_not_settled_but_v1_reviews():
+    ledger = may_ledger(last_sales_day=24)  # sales 25..31 not paid out yet at the 6th
+    (v1,) = run_check("books_vs_processor", 1, ledger, JUNE_6)
+    assert v1.severity in ("review", "hold") and v1.facts["month"] == "2024-05"
+    assert run2(ledger, JUNE_6) == []
+
+
+def test_v2_judges_a_fully_covered_month_straight_away():
+    # Payouts through the one expected on 1 June are settled by the 3rd: judged, and clean.
+    assert run2(may_ledger(), JUNE_6) == []
+    assert run_check("books_vs_processor", 1, may_ledger(), JUNE_6) == []
+
+
+def test_v2_waits_while_a_payout_for_the_month_is_unsettled():
+    ledger = may_ledger(pending_from=20)
+    assert run2(ledger, JUNE_6) == []
+
+
+def test_v2_real_gap_is_flagged_once_the_wait_has_passed():
+    ledger = may_ledger(last_sales_day=24)
+    for as_of in (datetime(2024, 6, 25, 12, tzinfo=UTC), datetime(2024, 6, 30, 12, tzinfo=UTC)):
+        (f,) = run2(ledger, as_of)
+        assert f.check_version == 2 and f.severity == "hold" and f.facts["month"] == "2024-05"
+        assert f.facts["books_net"] == "3100.00" and f.facts["processor_total"] == "2400.00"
+        assert "2024-05" not in f.facts["skipped_months"]
+        assert f.facts["settle_wait_bdays"] == str(SETTLE_WAIT_FLOOR_BDAYS)
+        assert f.evidence_refs
+
+
+def test_v2_unsettled_payouts_do_not_block_judging_forever():
+    (f,) = run2(may_ledger(pending_from=20), datetime(2024, 6, 30, 12, tzinfo=UTC))
+    assert f.facts["month"] == "2024-05" and f.severity == "hold"
+
+
+def test_v2_records_skipped_months_in_facts():
+    # May is judged (and short); June is still waiting at 30 June's window end.
+    (f,) = run2(may_ledger(last_sales_day=24), datetime(2024, 7, 1, 12, tzinfo=UTC))
+    assert f.facts["skipped_months"].startswith("2024-06 (judged from ")
+
+
+def test_v2_wait_follows_the_borrowers_own_payout_lag():
+    ledger = may_ledger(last_sales_day=24)
+    slow = payout("PSLOW", "1", date(2024, 5, 31), expected=date(2024, 5, 2), fees="0")
+    ledger = replace(ledger, payouts=(*ledger.payouts, slow))
+    lag = _bdays_between(date(2024, 5, 2), date(2024, 5, 31))
+    assert lag + 2 > SETTLE_WAIT_FLOOR_BDAYS
+    (f,) = run2(ledger, datetime(2024, 7, 15, 12, tzinfo=UTC))
+    assert f.facts["settle_wait_bdays"] == str(lag + 2)
+    # 12 business days after May 31 would be 18 June, but this borrower's wait is longer.
+    assert run2(ledger, datetime(2024, 6, 19, 12, tzinfo=UTC)) == []
+
+
+@pytest.mark.parametrize(
+    ("processor", "severity"),
+    [(1100, None), (1045, None), (1040, "review"), (935, "review"), (930, "hold"), (1300, "hold")],
+)
+def test_v2_keeps_v1_thresholds(processor, severity):
+    out = run2(_books_ledger(processor))
+    assert [(f.severity, f.facts["gap"]) for f in out] == [
+        (f.severity, f.facts["gap"]) for f in run("books_vs_processor", _books_ledger(processor))
+    ]
+    assert [f.severity for f in out] == ([severity] if severity else [])
+
+
+def test_v2_absent_sources_and_credit_notes_match_v1():
+    d = date(2024, 5, 10)
+    assert run2(Ledger(orders=(order("O1", "100", d),))) == []
+    assert run2(Ledger(payouts=(payout("P", "1", d),))) == []
+    ledger = replace(
+        _books_ledger(1100),
+        refunds=(Refund("R1", "R1", D("200"), at(d, 12), at(d, 12)),),
+        invoices=(
+            invoice("INV-O2", "receivable", "1000", d),
+            invoice("CN-R1", "receivable", "-200", d),
+        ),
+    )
+    assert run2(ledger) == []
+
+
+def test_v2_uses_worst_month():
+    apr, may = date(2024, 4, 10), date(2024, 5, 10)
+    ledger = Ledger(
+        orders=(order("O1", "1000", apr), order("O2", "1000", may)),
+        payouts=(payout("P1", "1", may, expected=may + timedelta(days=1)),),
+        invoices=(
+            invoice("I1", "receivable", "1000", apr),
+            invoice("I2", "receivable", "1500", may),
+        ),
+    )
+    (f,) = run2(ledger)
+    assert f.severity == "hold" and f.facts["month"] == "2024-05"

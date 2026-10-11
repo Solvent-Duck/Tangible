@@ -28,6 +28,9 @@ class BandRule:
 class Knockout:
     open_finding_severity: str
     hold_states: tuple[str, ...]
+    # Review states in which a model-origin (agent) hold blocks. None means the policy does not
+    # distinguish origin (0.2.x files): model holds block in `hold_states`, like rule holds.
+    model_hold_states: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +81,15 @@ def _mapping(
 def _str(v: Any, path: str) -> str:
     if not isinstance(v, str) or not v:
         raise ValueError(f"{path}: expected a non-empty string")
+    return v
+
+
+def _states(v: Any, path: str) -> list[str]:
+    if not isinstance(v, list) or not v:
+        raise ValueError(f"{path}: expected a non-empty list")
+    for i, s in enumerate(v):
+        if s not in _STATES:
+            raise ValueError(f"{path}[{i}]: unknown review state {s!r}")
     return v
 
 
@@ -133,19 +145,24 @@ def parse_policy(spec: Any) -> PolicySpec:
     ko = _mapping(
         top["knockout"],
         "policy.knockout",
-        {"open_finding_severity", "hold_states"},
+        {"open_finding_severity", "hold_states", "model_hold_states"},
         {"hold_states"},
     )
-    states = ko["hold_states"]
-    if not isinstance(states, list) or not states:
-        raise ValueError("policy.knockout.hold_states: expected a non-empty list")
-    for i, s in enumerate(states):
-        if s not in _STATES:
-            raise ValueError(f"policy.knockout.hold_states[{i}]: unknown review state {s!r}")
+    states = _states(ko["hold_states"], "policy.knockout.hold_states")
+    model_states: list[str] | None = None
+    if "model_hold_states" in ko:
+        model_states = _states(ko["model_hold_states"], "policy.knockout.model_hold_states")
+        stray = [s for s in model_states if s not in states]
+        if stray:
+            raise ValueError(
+                f"policy.knockout.model_hold_states: {stray} not in hold_states {states}"
+            )
     severity = ko.get("open_finding_severity", "hold")
     if severity != "hold":
         raise ValueError("policy.knockout.open_finding_severity: only 'hold' is supported")
-    knockout = Knockout(severity, tuple(states))
+    knockout = Knockout(
+        severity, tuple(states), None if model_states is None else tuple(model_states)
+    )
 
     raw_bands = top["bands"]
     if not isinstance(raw_bands, list) or not raw_bands:

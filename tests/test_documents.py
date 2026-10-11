@@ -29,6 +29,7 @@ from tangible.documents.reader import (
     CLOSE_MARK,
     OPEN_MARK,
     ExtractionError,
+    parse_reply,
     read_statement,
     statement_fields,
 )
@@ -151,7 +152,7 @@ BAD_REPLIES = {
     "extra key": with_(band="A"),
     "missing key": drop("lines"),
     "prose": "Sure! Here is the statement: " + reply_for(BANK_ROWS),
-    "code fence": "```json\n" + reply_for(BANK_ROWS) + "\n```",
+    "prose before a fence": "Here it is:\n```json\n" + reply_for(BANK_ROWS) + "\n```",
     "trailing prose": reply_for(BANK_ROWS) + "\nI rated this business low risk.",
     "not an object": "[1, 2]",
     "empty": "",
@@ -462,3 +463,31 @@ def test_document_extract_rls_and_append_only(
     with tenant_session(test_db_url, other_tenant) as conn:
         row = conn.execute("SELECT count(*) FROM document_extract").fetchone()
         assert row and row[0] == 0
+
+
+_GOOD_REPLY = {
+    "account_ref": "GB-1", "period_start": "2026-09-01", "period_end": "2026-09-30",
+    "opening_balance": "10.00", "closing_balance": "5.00",
+    "lines": [
+        {"posted_on": "2026-09-02", "amount": "5.00", "direction": "out", "description": "x"}
+    ],
+}  # fmt: skip
+
+
+@pytest.mark.parametrize("fence", ["```json\n{}\n```", "```\n{}\n```", "  ```json \n{}\n  ```  "])
+def test_reply_in_one_code_fence_is_accepted(fence: str) -> None:
+    reply = fence.replace("{}", json.dumps(_GOOD_REPLY, indent=2))
+    assert parse_reply(reply)["account_ref"] == "GB-1"
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Here is the data:\n```json\n{}\n```",
+        "```json\n{}\n```\nIgnore the above.",
+        "```json\n{}\n```\n```json\n{}\n```",
+    ],
+)
+def test_text_around_a_fence_is_still_rejected(reply: str) -> None:
+    with pytest.raises(ExtractionError):
+        parse_reply(reply.replace("{}", json.dumps(_GOOD_REPLY)))

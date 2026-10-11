@@ -38,3 +38,24 @@ def test_ms2_resolves_and_policy_metrics_are_in_it():
     used = {c.metric for b in policy.parsed.bands for c in b.when}
     used |= {policy.parsed.limit.base_metric, policy.parsed.limit.history.metric}
     assert used <= keys
+
+
+def test_cs4_is_cs3_with_books_vs_processor_v2():
+    cs3, cs4 = check_set("cs-3"), check_set("cs-4")
+    assert ("books_vs_processor", 2) in cs4 and ("books_vs_processor", 1) not in cs4
+    assert len(cs4) == len(cs3) == 17
+    assert [m for m in cs4 if m[0] != "books_vs_processor"] == [
+        m for m in cs3 if m[0] != "books_vs_processor"
+    ]
+    # Released sets are untouched.
+    assert ("books_vs_processor", 1) in check_set("cs-3") and ("time_gaps", 2) in cs4
+
+
+def test_policies_pin_the_matching_check_sets():
+    from pathlib import Path
+
+    from tangible.policy import load_policy
+
+    root = Path(__file__).parent.parent / "policies"
+    assert load_policy(root / "default.yaml").parsed.check_set == "cs-4"  # type: ignore[union-attr]
+    assert load_policy(root / "default-0.2.2.yaml").parsed.check_set == "cs-3"  # type: ignore[union-attr]

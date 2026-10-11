@@ -1,0 +1,52 @@
+{# Inline icons (Lucide-style strokes), decorative: always aria-hidden. #}
+{% macro icon(name, cls="icon") -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+{%- if name == 'check' %}<path d="M20 6 9 17l-5-5"/>
+{%- elif name == 'check-circle' %}<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>
+{%- elif name == 'alert' %}<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+{%- elif name == 'alert-circle' %}<circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+{%- elif name == 'info' %}<circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+{%- elif name == 'arrow-right' %}<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+{%- elif name == 'arrow-left' %}<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
+{%- elif name == 'chevron-right' %}<path d="m9 18 6-6-6-6"/>
+{%- elif name == 'plus' %}<path d="M12 5v14"/><path d="M5 12h14"/>
+{%- elif name == 'play' %}<path d="m7 4 13 8-13 8V4Z"/>
+{%- elif name == 'sparkles' %}<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/>
+{%- elif name == 'file' %}<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/>
+{%- elif name == 'upload' %}<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>
+{%- elif name == 'download' %}<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>
+{%- elif name == 'lock' %}<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+{%- elif name == 'pen' %}<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+{%- elif name == 'refresh' %}<path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M8 16H3v5"/>
+{%- elif name == 'send' %}<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+{%- elif name == 'message' %}<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>
+{%- elif name == 'link' %}<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>
+{%- elif name == 'inbox' %}<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1Z"/>
+{%- elif name == 'layers' %}<path d="m12 2 10 5-10 5L2 7Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>
+{%- elif name == 'shield' %}<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>
+{%- elif name == 'clock' %}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+{%- elif name == 'user' %}<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>
+{%- elif name == 'log-out' %}<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>
+{%- elif name == 'search' %}<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+{%- elif name == 'cpu' %}<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>
+{%- elif name == 'ruler' %}<path d="M21.3 15.3 8.7 2.7a1 1 0 0 0-1.4 0L2.7 7.3a1 1 0 0 0 0 1.4l12.6 12.6a1 1 0 0 0 1.4 0l4.6-4.6a1 1 0 0 0 0-1.4Z"/><path d="m7.5 10.5 2-2M10.5 13.5l2-2M13.5 16.5l2-2"/>
+{%- endif %}
+</svg>
+{%- endmacro %}
+
+{% macro logo(cls="brand-mark") -%}
+<svg class="{{ cls }}" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+  <rect width="32" height="32" rx="8" fill="var(--brand)"/>
+  <path d="M9 10.5h14" stroke="var(--on-brand)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M16 10.5V23" stroke="var(--on-brand)" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="22.5" cy="21.5" r="2.3" fill="var(--on-brand)" opacity=".75"/>
+</svg>
+{%- endmacro %}
+
+{% macro status_pill(status) -%}
+<span class="pill st-{{ status }}">{{ status | humanize }}</span>
+{%- endmacro %}
+
+{% macro band_badge(band, cls="") -%}
+{% if band %}<span class="band band-{{ band }} {{ cls }}" aria-label="Band {{ band }}">{{ band }}</span>{% else %}<span class="band band-none {{ cls }}" aria-label="No band (knock-out)">KO</span>{% endif %}
+{%- endmacro %}

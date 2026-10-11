@@ -13,6 +13,11 @@ def borrowers(conn: Conn) -> list[dict[str, str]]:
     return [{"id": str(i), "name": n} for i, n in rows]
 
 
+def borrower_name(conn: Conn, borrower_id: str) -> str:
+    row = conn.execute("SELECT name FROM borrower WHERE id = %s", (borrower_id,)).fetchone()
+    return str(row[0]) if row else "Unknown borrower"
+
+
 def analysts(conn: Conn) -> list[dict[str, str]]:
     rows = conn.execute(
         "SELECT subject, COALESCE(display_name, subject) FROM app_user WHERE role = 'analyst' "

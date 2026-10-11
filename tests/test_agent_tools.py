@@ -16,11 +16,12 @@ from tangible.agent.tools import (
     open_context,
     tool_definitions,
 )
+from tangible.checks.registry import FindingDraft
 from tangible.checks.registry import run_check as direct_check
 from tangible.checks.sets import check_set
 from tangible.datasets.synthetic import generate
 from tangible.db.cases import Case, create_case
-from tangible.db.findings import load_findings
+from tangible.db.findings import insert_finding, load_findings
 from tangible.db.repo import create_borrower, load_ledger
 from tangible.db.session import admin_connect, tenant_session
 from tangible.evidence.store import LocalEvidenceStore
@@ -240,6 +241,24 @@ def test_record_finding_with_verifier(ctx: ToolContext, verdict: bool) -> None:
     assert seen == [("Revenue looks odd", [good.result])]
 
 
+def test_verification_feedback_text(ctx: ToolContext) -> None:
+    from tangible.agent.tools.findings import verification_feedback
+    from tangible.agent.verify import verify_numbers
+
+    good = query(ctx, "SELECT 41 AS n")
+    res = call_tool(ctx, "record_finding", finding_args([good.call_id], summary="Counted 41 rows"))
+    assert res.error is None and isinstance(res.result, dict)
+    assert "status" not in res.result  # the stored result is unchanged
+    assert verification_feedback(ctx, res.result) == "recorded"  # no verifier wired
+    ctx.verifier = lambda s, r: verify_numbers(s, r).ok
+    assert verification_feedback(ctx, res.result) == "recorded; verified"
+    bad = res.result | {"summary": "Counted 41 rows, 7 missing and 12.5% off"}
+    text = verification_feedback(ctx, bad)
+    assert text.startswith("recorded; UNVERIFIED: numbers not found in cited results: 7, 12.5%")
+    spec = next(d for d in tool_definitions() if d["name"] == "record_finding")
+    assert "UNVERIFIED" in spec["description"] and "run_analysis" in spec["description"]
+
+
 # ---------------------------------------------------------------- questions
 
 
@@ -341,3 +360,93 @@ def test_context_snapshot_matches_known(ctx: ToolContext) -> None:
         con.close()
     assert n == len(ctx.known.payouts)
     assert isinstance(ctx.case, Case) and ctx.case.as_of.tzinfo is not None
+
+
+# ---------------------------------------------------------------- replaces
+
+
+def record(ctx: ToolContext, ids: list[str], **over: Any) -> Any:
+    return call_tool(ctx, "record_finding", finding_args(ids, **over))
+
+
+def test_record_finding_result_carries_the_new_finding_id(ctx: ToolContext) -> None:
+    good = query(ctx, "SELECT 1")
+    res = record(ctx, [good.call_id])
+    assert res.error is None
+    (f,) = load_findings(ctx.conn, case_id=ctx.case.id)
+    assert res.result["finding_id"] == f.id and res.result["replaces"] is None
+    assert f.replaces_id is None
+
+
+def test_replaces_accepted(ctx: ToolContext) -> None:
+    good = query(ctx, "SELECT 1")
+    first = record(ctx, [good.call_id], slug="one")
+    second = record(ctx, [good.call_id], slug="two", replaces=first.result["finding_id"].upper())
+    assert second.error is None
+    # a correction of a correction replaces the correction
+    third = record(ctx, [good.call_id], slug="three", replaces=second.result["finding_id"])
+    assert third.error is None
+    stored = {f.draft.check_key: f for f in load_findings(ctx.conn, case_id=ctx.case.id)}
+    assert stored["agent:two"].replaces_id == first.result["finding_id"]
+    assert stored["agent:three"].replaces_id == second.result["finding_id"]
+    current = load_findings(ctx.conn, case_id=ctx.case.id, current_only=True)
+    assert [f.draft.check_key for f in current] == ["agent:three"]
+
+
+def test_replaces_rejected(ctx: ToolContext) -> None:
+    good = query(ctx, "SELECT 1")
+    mine = record(ctx, [good.call_id], slug="mine").result["finding_id"]
+
+    other = create_case(ctx.conn, ctx.case.tenant_id, ctx.case.borrower_id, ctx.case.as_of)
+    other_ctx = ToolContext(
+        ctx.conn, other, ctx.ledger, ctx.known, ctx.snapshot, ctx.metric_set_id, ctx.check_set_id
+    )
+    foreign_call = query(other_ctx, "SELECT 1")
+    foreign = record(other_ctx, [foreign_call.call_id], slug="theirs").result["finding_id"]
+
+    rule = insert_finding(
+        ctx.conn, ctx.case.tenant_id, ctx.case.borrower_id,
+        FindingDraft("some_rule", 1, "review", "integrity", "r"),
+        case_id=ctx.case.id,
+    )  # fmt: skip
+
+    accepted = record(ctx, [good.call_id], slug="accepted").result["finding_id"]
+    ctx.conn.execute(
+        "INSERT INTO underwriter_action (tenant_id, finding_id, user_id, action, reason) "
+        "VALUES (%s, %s, 'ana', 'accept', 'checked it')",
+        (ctx.case.tenant_id, accepted),
+    )
+
+    unknown = "00000000-0000-4000-8000-000000000000"
+    cases = {
+        "reviewed by an analyst": (accepted, "reviewed by an analyst (accept)"),
+        "other case": (foreign, "not a finding of this case"),
+        "rule finding": (rule, "rule finding"),
+        "unknown id": (unknown, "not a finding of this case"),
+        "not a uuid": ("nope", "not a valid finding id"),
+    }
+    for name, (rid, needle) in cases.items():
+        res = record(ctx, [good.call_id], slug="x", replaces=rid)
+        assert res.error and needle in res.error, name
+
+    ok = record(ctx, [good.call_id], slug="fix", replaces=mine)
+    assert ok.error is None
+    again = record(ctx, [good.call_id], slug="fix-again", replaces=mine)
+    assert again.error and "already been replaced" in again.error
+    assert ok.result["finding_id"] in again.error  # points at what to replace instead
+    # nothing from the rejected calls was stored
+    keys = sorted(f.draft.check_key for f in load_findings(ctx.conn, case_id=ctx.case.id))
+    assert keys == ["agent:accepted", "agent:fix", "agent:mine", "some_rule"]
+
+
+def test_unverified_feedback_names_the_id_to_replace(ctx: ToolContext) -> None:
+    from tangible.agent.tools.findings import verification_feedback
+    from tangible.agent.verify import verify_numbers
+
+    ctx.verifier = lambda s, r: verify_numbers(s, r).ok
+    good = query(ctx, "SELECT 41 AS n")
+    res = record(ctx, [good.call_id], summary="Counted 41 rows and 7 missing")
+    text = verification_feedback(ctx, res.result)
+    assert "UNVERIFIED" in text and f"replaces set to {res.result['finding_id']}" in text
+    spec = next(d for d in tool_definitions() if d["name"] == "record_finding")
+    assert "replaces" in spec["input_schema"]["properties"] and "replaces" in spec["description"]

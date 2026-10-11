@@ -1,7 +1,11 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}{{ title }}{% endblock %}
+{% block main_class %}narrow{% endblock %}
 {% block body %}
-<h1>{{ title }}</h1>
-<p class="flash flash-error" role="alert">{{ message }}</p>
-<p>Use your browser's back button, or <a href="/">return to the case list</a>.</p>
+<div class="card card-pad mt-3" style="padding:2rem">
+  <h1 style="font-size:1.35rem;margin-bottom:1rem">{{ title }}</h1>
+  <div class="flash flash-error" role="alert">{{ icon('alert-circle') }}<div class="body">{{ message }}</div></div>
+  <p class="help mb-0">Use your browser's back button, or <a href="/">return to the case list</a>.</p>
+</div>
 {% endblock %}

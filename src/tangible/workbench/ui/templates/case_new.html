@@ -1,30 +1,82 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}New case{% endblock %}
 {% block body %}
-<h1>New case</h1>
-<form method="post" action="/cases/new">
-  <p><label for="borrower_id">Borrower</label>
-  <select id="borrower_id" name="borrower_id" required>
-    {% for b in borrowers %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
-  </select></p>
-  <p><label for="as_of">As of (UTC)</label> <input id="as_of" name="as_of" type="datetime-local" value="{{ now }}" required></p>
-  <p><label for="loan_amount">Loan amount</label> <input id="loan_amount" name="loan_amount" inputmode="decimal"></p>
-  <p><label for="budget_steps">Agent step budget</label> <input id="budget_steps" name="budget_steps" value="40" inputmode="numeric"></p>
-  <p><label for="budget_usd">Agent cost budget (USD)</label> <input id="budget_usd" name="budget_usd" value="5.00" inputmode="decimal"></p>
-  <p><label for="assigned_analyst">Assign to analyst</label>
-  <select id="assigned_analyst" name="assigned_analyst">
-    <option value="">Unassigned</option>
-    {% for a in analysts %}<option value="{{ a.subject }}">{{ a.name }} ({{ a.subject }})</option>{% endfor %}
-  </select></p>
-  <button>Create case</button>
-</form>
-<h2>Assign an existing case</h2>
-<form method="post" action="/cases/assign">
-  <p><label for="case_id">Case id</label> <input id="case_id" name="case_id" size="40" required></p>
-  <p><label for="analyst">Analyst</label>
-  <select id="analyst" name="analyst">
-    {% for a in analysts %}<option value="{{ a.subject }}">{{ a.name }} ({{ a.subject }})</option>{% endfor %}
-  </select></p>
-  <button>Assign</button>
-</form>
+<div class="page-head">
+  <div class="titles">
+    <h1>New case</h1>
+    <p class="lede">Open a case for a borrower as of a date, set the agent's budget, and assign an analyst.</p>
+  </div>
+</div>
+
+<div class="grid">
+<section class="card" aria-labelledby="new-h">
+  <div class="card-head"><h2 id="new-h">Case details</h2></div>
+  <form method="post" action="/cases/new">
+    <div class="card-body">
+      <div class="field">
+        <label for="borrower_id">Borrower</label>
+        <select id="borrower_id" name="borrower_id" required>
+          {% for b in borrowers %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="fields">
+        <div class="field">
+          <label for="as_of">As of (UTC)</label>
+          <input id="as_of" name="as_of" type="datetime-local" value="{{ now }}" required>
+          <p class="help">The case sees only data observed by this time.</p>
+        </div>
+        <div class="field">
+          <label for="loan_amount">Loan amount</label>
+          <input id="loan_amount" name="loan_amount" inputmode="decimal" placeholder="Optional">
+        </div>
+        <div class="field">
+          <label for="budget_steps">Agent step budget</label>
+          <input id="budget_steps" name="budget_steps" value="40" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="budget_usd">Agent cost budget (USD)</label>
+          <input id="budget_usd" name="budget_usd" value="5.00" inputmode="decimal">
+        </div>
+      </div>
+      <div class="field mb-0">
+        <label for="assigned_analyst">Assign to analyst</label>
+        <select id="assigned_analyst" name="assigned_analyst">
+          <option value="">Unassigned</option>
+          {% for a in analysts %}<option value="{{ a.subject }}">{{ a.name }} ({{ a.subject }})</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="card-foot"><button class="btn-primary">{{ icon('plus') }}Create case</button></div>
+  </form>
+</section>
+
+<aside>
+<section class="card" aria-labelledby="as-h">
+  <div class="card-head"><h2 id="as-h">Assign an existing case</h2></div>
+  <form method="post" action="/cases/assign">
+    <div class="card-body">
+      <div class="field"><label for="case_id">Case id</label><input id="case_id" name="case_id" required spellcheck="false" style="font-family:var(--mono);font-size:.8rem"></div>
+      <div class="field mb-0"><label for="analyst">Analyst</label>
+      <select id="analyst" name="analyst">
+        {% for a in analysts %}<option value="{{ a.subject }}">{{ a.name }} ({{ a.subject }})</option>{% endfor %}
+      </select></div>
+    </div>
+    <div class="card-foot"><button>{{ icon('user') }}Assign</button></div>
+  </form>
+</section>
+
+<section class="card" aria-labelledby="rs-h">
+  <div class="card-head"><h2 id="rs-h">Reset a stuck investigation</h2></div>
+  <form method="post" action="/cases/reset">
+    <div class="card-body">
+      <p class="help">For a case left 'investigating' after a server restart. Allowed only once the run is older than the stuck threshold; the case goes back to its status before the run and nothing is deleted.</p>
+      <div class="field"><label for="reset_case_id">Case id</label><input id="reset_case_id" name="case_id" required spellcheck="false" style="font-family:var(--mono);font-size:.8rem"></div>
+      <div class="field mb-0"><label for="reset_reason">Reason (required)</label><input id="reset_reason" name="reason" required></div>
+    </div>
+    <div class="card-foot"><button>{{ icon('refresh') }}Reset stuck investigation</button></div>
+  </form>
+</section>
+</aside>
+</div>
 {% endblock %}

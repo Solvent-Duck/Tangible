@@ -9,8 +9,10 @@ import yaml
 from tangible.policy import FindingInput, evaluate, load_policy, parse_policy
 
 POLICIES = Path(__file__).parent.parent / "policies"
-POLICY = load_policy(POLICIES / "default.yaml")
-RAW = yaml.safe_load((POLICIES / "default.yaml").read_text())
+# These tests pin policy 0.2.2 (kept as default-0.2.2.yaml); origin-aware 0.3.0 is in
+# test_policy_origin.py.
+POLICY = load_policy(POLICIES / "default-0.2.2.yaml")
+RAW = yaml.safe_load((POLICIES / "default-0.2.2.yaml").read_text())
 
 GOOD = {
     "refund_rate": D("0.02"),

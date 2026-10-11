@@ -81,6 +81,10 @@ PLANT_WINDOW_DAYS: Final[dict[str, int]] = {
 ACCOUNT_REF: Final = "GB-OPS-001"
 PROCESSOR: Final = "SHOPIFY PAYMENTS"
 OWNER_ACCOUNT: Final = "J SMITH PERSONAL"
+LENDER: Final = "YRDEAL CAPITAL"
+MARKETPLACE: Final = "AMAZON PAYMENTS"
+BANK_NAME: Final = "NORTHVALE BANK PLC"
+LANDLORD: Final = "HOLLOWAY PROPERTY LTD"
 ONE_DAY: Final = timedelta(days=1)
 CENT: Final = Decimal("0.01")
 MICRO: Final = Decimal("0.0001")
@@ -115,7 +119,7 @@ CREDIT_NOTE_DAYS: Final = (
 )  # wholesale credit notes are refunded by transfer this many days on
 LENDER_DEBIT: Final = Decimal("450.00")
 NON_PRODUCT_CODES: Final = frozenset({"POST", "DOT", "M", "PADS", "C2", "CRUK", "S"})
-SUPPLIERS: Final[tuple[tuple[str, str], ...]] = (
+SUPPLIERS: Final[tuple[tuple[str, str], ...]] = (  # (name, invoice code)
     ("HARBOUR GIFTWARE LTD", "HGL"),
     ("NORTHGATE PAPERCRAFT LTD", "NPC"),
     ("LANTERN IMPORTS LTD", "LNI"),
@@ -168,6 +172,63 @@ EVIDENCE_PULL_COLUMNS: Final = (
     "byte_size",
     "status",
 )
+
+
+# ----------------------------------------------------------------------------- profile
+
+
+@dataclass(frozen=True)
+class Profile:
+    """Who a synthetic merchant is: the names its bank rows and invoices carry.
+
+    The default reproduces the original single-merchant output byte for byte. Checks key on some
+    of these names, so a replacement must keep what they look for (see tangible.checks):
+
+    - `processor_name` is the bank counterparty of payout deposits; partial_coverage reads its
+      processor keyword (SHOPIFY, STRIPE, SQUARE, ...) against the connected sources.
+    - `processor_source` is the payout's processor and the evidence pull source, lower case; its
+      upper-case form prefixes each deposit's description ("SHOPIFY PAYOUT <ref>").
+    - `owner_account` is the owner's personal account. self_transfers_as_revenue finds it because
+      it receives outflows described OWNER DRAWINGS (that description is fixed).
+    - `lender_name` should keep a lender word (CAPITAL, LENDING, FINANCE, ...) so the recurring
+      debit is flagged as lender-like.
+    - `marketplace_name` must keep the AMAZON keyword for partial_coverage.
+    - `supplier_names` replaces the seven wholesale suppliers' names (empty keeps the defaults).
+    """
+
+    account_ref: str = ACCOUNT_REF
+    processor_name: str = PROCESSOR
+    processor_source: str = "shopify"
+    owner_account: str = OWNER_ACCOUNT
+    lender_name: str = LENDER
+    marketplace_name: str = MARKETPLACE
+    bank_name: str = BANK_NAME
+    landlord: str = LANDLORD
+    supplier_names: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.supplier_names and len(self.supplier_names) != len(SUPPLIERS):
+            raise ValueError(f"supplier_names needs {len(SUPPLIERS)} names or none")
+        if len(set(self.supplier_names)) != len(self.supplier_names):
+            raise ValueError("supplier_names must be distinct")
+
+    def supplier(self, index: int) -> tuple[str, str]:
+        """(name, invoice code) of supplier `index`."""
+        name, code = SUPPLIERS[index]
+        return (self.supplier_names[index] if self.supplier_names else name, code)
+
+
+DEFAULT_PROFILE: Final = Profile()
+
+
+def _describe(plant: str, profile: Profile) -> str:
+    """The plant's description with the profile's names in place of the default merchant's."""
+    return (
+        PLANT_DESCRIPTIONS[plant]
+        .replace(LENDER, profile.lender_name)
+        .replace(OWNER_ACCOUNT, profile.owner_account)
+        .replace(MARKETPLACE, profile.marketplace_name)
+    )
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -684,6 +745,7 @@ def _add_supplier_invoices(
     cost_on: Callable[[int, date], Decimal],
     supplier_of: list[int],
     rng: random.Random,
+    profile: Profile,
 ) -> list[tuple[date, Decimal]]:
     """One invoice per supplier per week, for the stock received that week, issued the Monday
     after. Returns (issued, amount) for the VAT input calculation."""
@@ -697,7 +759,7 @@ def _add_supplier_invoices(
         amount = _money(weekly[(sup, week)])
         if issued > cal.horizon or amount <= 0:
             continue
-        name, code = SUPPLIERS[sup]
+        name, code = profile.supplier(sup)
         _add_payable(out, cal, rng, name, f"PI-{code}-{issued:%Y%m%d}", amount, issued)
         purchases.append((issued, amount))
     return purchases
@@ -740,6 +802,7 @@ def _add_monthly(
     payroll_rng: random.Random,
     ads_rng: random.Random,
     opex_rng: random.Random,
+    profile: Profile,
 ) -> None:
     """Monthly: rent, utilities, software, courier invoices, bank fees, payroll. Weekly: ad
     platform invoices. Quarterly: VAT.
@@ -757,9 +820,7 @@ def _add_monthly(
         month_last = date(y, m, calendar.monthrange(y, m)[1])
         month_end = _last_bday(y, m)
         if cal.start <= first <= cal.horizon:
-            _add_payable(
-                out, cal, opex_rng, "HOLLOWAY PROPERTY LTD", f"RENT-{ym}", RENT, first, 0, 0.0
-            )
+            _add_payable(out, cal, opex_rng, profile.landlord, f"RENT-{ym}", RENT, first, 0, 0.0)
             winter = 1 if m in (11, 12, 1, 2, 3) else 0
             power = _money(Decimal(str(round(310 + 95 * winter, 2))) * Decimal(
                 str(round(opex_rng.uniform(0.88, 1.12), 4))
@@ -783,9 +844,7 @@ def _add_monthly(
                 vat_inputs.append((month_end, courier))
 
         if cal.start <= month_end <= cal.horizon:
-            out.txns.append(
-                _Txn(month_end, "out", ACCOUNT_FEE, "NORTHVALE BANK PLC", "ACCOUNT FEES")
-            )
+            out.txns.append(_Txn(month_end, "out", ACCOUNT_FEE, profile.bank_name, "ACCOUNT FEES"))
         rate = Decimal(str(round(payroll_rng.uniform(0.11, 0.13), 4)))
         revenue = sum((sales.rev(d) for d in _days(first, month_last)), ZERO)
         if month_end <= cal.horizon and revenue > 0:
@@ -833,20 +892,24 @@ def _add_monthly(
 # ----------------------------------------------------------------------------- plants
 
 
-def _plant_lender_debit(out: _Out, cal: _Cal, from_day: date) -> None:
+def _plant_lender_debit(out: _Out, cal: _Cal, from_day: date, profile: Profile) -> None:
     for d in _bdays(from_day, cal.horizon):
-        out.txns.append(_Txn(d, "out", LENDER_DEBIT, "YRDEAL CAPITAL", "DD YRDEAL CAPITAL"))
+        out.txns.append(
+            _Txn(d, "out", LENDER_DEBIT, profile.lender_name, f"DD {profile.lender_name}")
+        )
 
 
-def _plant_self_transfer(out: _Out, cal: _Cal, from_day: date, rng: random.Random) -> None:
+def _plant_self_transfer(
+    out: _Out, cal: _Cal, from_day: date, rng: random.Random, profile: Profile
+) -> None:
     for d in _days(from_day, cal.horizon):
         if d.weekday() == 4:
             amount = Decimal(rng.randint(10, 18) * 500)
-            out.txns.append(_Txn(d, "in", amount, OWNER_ACCOUNT, "SALES TRANSFER"))
+            out.txns.append(_Txn(d, "in", amount, profile.owner_account, "SALES TRANSFER"))
 
 
 def _plant_partial_coverage(
-    out: _Out, cal: _Cal, sales: _Sales, from_day: date, rng: random.Random
+    out: _Out, cal: _Cal, sales: _Sales, from_day: date, rng: random.Random, profile: Profile
 ) -> None:
     for d in _days(from_day, cal.horizon):
         if d.weekday() != 3:
@@ -858,14 +921,14 @@ def _plant_partial_coverage(
         amount = _money(week * factor)
         if amount > 0:
             out.txns.append(
-                _Txn(d, "in", amount, "AMAZON PAYMENTS", "AMAZON MARKETPLACE DISBURSEMENT")
+                _Txn(d, "in", amount, profile.marketplace_name, "AMAZON MARKETPLACE DISBURSEMENT")
             )
 
 
 # ----------------------------------------------------------------------------- balance
 
 
-def _settle_owner(out: _Out, cal: _Cal, opening: Decimal) -> None:
+def _settle_owner(out: _Out, cal: _Cal, opening: Decimal, profile: Profile) -> None:
     """Owner cash flows, simulated day by day from the opening balance.
 
     When cash would fall under the floor (a restock squeeze) the owner lends the company enough
@@ -882,17 +945,17 @@ def _settle_owner(out: _Out, cal: _Cal, opening: Decimal) -> None:
         if balance < CASH_FLOOR:
             need = CASH_FLOOR + LOAN_CUSHION - balance
             loan = Decimal(math.ceil(need / 5000) * 5000)
-            out.txns.append(_Txn(d, "in", loan, OWNER_ACCOUNT, "DIRECTORS LOAN"))
+            out.txns.append(_Txn(d, "in", loan, profile.owner_account, "DIRECTORS LOAN"))
             balance += loan
         excess = balance - CASH_BUFFER
         if d in month_ends and excess >= DRAWINGS_MIN:
             draw = Decimal(int(excess * DRAWINGS_SHARE // 100) * 100)
             if draw >= DRAWINGS_MIN:
-                out.txns.append(_Txn(d, "out", draw, OWNER_ACCOUNT, "OWNER DRAWINGS"))
+                out.txns.append(_Txn(d, "out", draw, profile.owner_account, "OWNER DRAWINGS"))
                 balance -= draw
 
 
-def _add_bank_rows(out: _Out) -> None:
+def _add_bank_rows(out: _Out, profile: Profile) -> None:
     """Number bank rows in a fixed order. Each is a deposit or outflow; observed the morning
     after it posts."""
     txns = sorted(
@@ -905,7 +968,7 @@ def _add_bank_rows(out: _Out) -> None:
             "bank",
             _at(t.posted + ONE_DAY, 6),
             f"BT-{i:06d}",
-            ACCOUNT_REF,
+            profile.account_ref,
             _cents(t.amount),
             t.direction,
             t.counterparty,
@@ -914,7 +977,7 @@ def _add_bank_rows(out: _Out) -> None:
         )
 
 
-def _add_balances(out: _Out, cal: _Cal, opening: Decimal) -> None:
+def _add_balances(out: _Out, cal: _Cal, opening: Decimal, profile: Profile) -> None:
     """Daily end-of-day balance: the opening balance plus the running sum of bank rows."""
     net: defaultdict[date, Decimal] = defaultdict(Decimal)
     for t in out.txns:
@@ -930,7 +993,7 @@ def _add_balances(out: _Out, cal: _Cal, opening: Decimal) -> None:
             "bank",
             _at(d + ONE_DAY, 6),
             f"BAL-{d:%Y%m%d}",
-            ACCOUNT_REF,
+            profile.account_ref,
             _cents(opening + c),
             d.isoformat(),
         )
@@ -1011,8 +1074,12 @@ def generate(
     out_dir: Path,
     seed: int = 7,
     plant: frozenset[str] = frozenset(),
+    profile: Profile = DEFAULT_PROFILE,
 ) -> dict[str, object]:
     """Write the synthetic footprint for the orders in `lines_csv` into `out_dir`.
+
+    `profile` names the merchant (bank account, processor, owner, lender, ...); the default is the
+    original single-merchant footprint. Names never change the random streams.
 
     Returns a summary: the row counts per file, the opening balance, and the planted list.
     """
@@ -1054,17 +1121,23 @@ def generate(
     for p in payouts:
         out.add(
             "payout",
-            "shopify",
+            profile.processor_source,
             _at(p.settled_on),
             p.ref,
-            "shopify",
+            profile.processor_source,
             _cents(p.amount),
             _cents(p.fees),
             p.expected_on.isoformat(),
             p.settled_on.isoformat(),
         )
         out.txns.append(
-            _Txn(p.deposit_on, "in", p.deposit_amount, PROCESSOR, f"SHOPIFY PAYOUT {p.ref}")
+            _Txn(
+                p.deposit_on,
+                "in",
+                p.deposit_amount,
+                profile.processor_name,
+                f"{profile.processor_source.upper()} PAYOUT {p.ref}",
+            )
         )
 
     # Wholesale receivables.
@@ -1098,7 +1171,7 @@ def generate(
 
     stock = _simulate(sku.units, [supplier_lead[s] for s in supplier_of], cal.start, cal.n_days)
     pay_rng = _rng(seed, "payables")
-    purchases = _add_supplier_invoices(out, cal, stock, cost_on, supplier_of, pay_rng)
+    purchases = _add_supplier_invoices(out, cal, stock, cost_on, supplier_of, pay_rng, profile)
     oneoff_rng = _rng(seed, "oneoffs")
     for name, code, amount in ONE_OFFS:
         issued = cal.start + timedelta(days=oneoff_rng.randrange(max(1, cal.n_days - 60)))
@@ -1119,26 +1192,42 @@ def generate(
 
     # Monthly and weekly outflows.
     _add_monthly(
-        out, cal, sales, purchases, _rng(seed, "payroll"), _rng(seed, "ads"), _rng(seed, "opex")
+        out,
+        cal,
+        sales,
+        purchases,
+        _rng(seed, "payroll"),
+        _rng(seed, "ads"),
+        _rng(seed, "opex"),
+        profile,
     )
 
     # Planted problems, applied after the clean schedule so they do not shift it.
     if "undisclosed_lender_debit" in plant:
-        _plant_lender_debit(out, cal, window("undisclosed_lender_debit"))
+        _plant_lender_debit(out, cal, window("undisclosed_lender_debit"), profile)
     if "self_transfer_revenue" in plant:
         _plant_self_transfer(
-            out, cal, window("self_transfer_revenue"), _rng(seed, "plant:self_transfer_revenue")
+            out,
+            cal,
+            window("self_transfer_revenue"),
+            _rng(seed, "plant:self_transfer_revenue"),
+            profile,
         )
     if "partial_coverage" in plant:
         _plant_partial_coverage(
-            out, cal, sales, window("partial_coverage"), _rng(seed, "plant:partial_coverage")
+            out,
+            cal,
+            sales,
+            window("partial_coverage"),
+            _rng(seed, "plant:partial_coverage"),
+            profile,
         )
 
     # Owner loans and drawings, then the daily balance from a fixed opening.
     opening = Decimal(root.randint(120000, 200000))
-    _settle_owner(out, cal, opening)
-    _add_balances(out, cal, opening)
-    _add_bank_rows(out)
+    _settle_owner(out, cal, opening, profile)
+    _add_balances(out, cal, opening, profile)
+    _add_bank_rows(out, profile)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     counts = _write(out_dir, out.entries)
@@ -1147,7 +1236,7 @@ def generate(
             "name": name,
             "start": window(name).isoformat(),
             "end": cal.horizon.isoformat(),
-            "description": PLANT_DESCRIPTIONS[name],
+            "description": _describe(name, profile),
         }
         for name in sorted(plant)
     ]

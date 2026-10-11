@@ -8,23 +8,32 @@ implementation, one work package each, in their own git worktree.
 
 ## Where we are
 
-Waves 0–4 are merged on `main` and `make check` passes. Status as of Oct 10, 2026:
+Waves 0–4 are merged on `main`, and the demo-readiness work ([demo-plan.md](demo-plan.md)) is on `demo-readiness`. `make check` passes. Status as of Oct 10, 2026:
 
 | Area | State |
 | --- | --- |
-| Schema | Migrations 0001–0006: four layers, RLS on every tenant table, immutability triggers, model-finding citation check, cases and agent tables, documents, workbench, connectors. |
+| Schema | Migrations 0001–0008: four layers, RLS on every tenant table, immutability triggers, model-finding citation check, cases and agent tables, documents, workbench, connectors, prompt-cache tokens on `model_call` (0007), `finding.replaces_id` (0008). |
 | Ledger | All row types (orders, refunds, payouts, bank transactions, invoices, inventory, balances, connections, applications, statements) and `known_as_of`. |
 | Metrics | 23 metrics in set `ms-2`. |
-| Checks | 17 checks in set `cs-3` (`time_gaps` v2 with UK bank holidays). |
-| Policy | Typed schema, evaluator, review state; `default.yaml` 0.2.2. |
+| Checks | Set `cs-4`: `cs-3` with `books_vs_processor` v2 (waits for settlement). |
+| Policy | Typed schema, evaluator, review state; `default.yaml` 0.3.0 (agent holds block only once accepted); 0.2.2 kept for replay. |
 | Assessment | Baseline, freeze and replay. |
-| Agent | Plan, analyst approval, budgeted investigation loop with wrap-up notices; eight logged tools; analysis sandbox; number verifier; prompts `plan@v2` and `investigate@v2`. Live end-to-end smoke test passed on Bedrock (Amazon Nova 2 Lite). |
+| Agent | Plan, analyst approval, budgeted investigation loop with wrap-up notices; eight logged tools (`record_finding` v2 with `replaces`); analysis sandbox; number verifier with feedback to the model; prompts `plan@v3` and `investigate@v4`; wrap-up stored for the analyst. Live on Bedrock with Claude Sonnet 4.5 and prompt caching. |
 | Backtest | Harness and report, run on a synthetic cohort. |
 | Workbench | FastAPI API and Jinja2/htmx UI with OIDC login. |
 | Connectors | Rutter and Plaid, validated against the vendor sandboxes; S3 Object Lock evidence store; Secrets Manager. |
+| Demo | `tangible-demo seed` / `statements`, web-lookup fixtures, upload-and-rebase reads late documents, redesigned workbench with trace, tenant picker and backtest pages. Run-sheet: [demo-script.md](demo-script.md). |
 
-Still open: the real backtest (needs the lender's historical file) and live runs on Claude
-models (Bedrock access for the newer Claude models is pending on our AWS account).
+Still open:
+- The real backtest. It needs the lender's historical file.
+- The Claude 5.x models. Bedrock quota for them is pending on our AWS account; live runs use
+  Sonnet 4.5.
+- Stated vs observed revenue. The check exists, but the DB loader never supplies an
+  application, so it can't fire from the database (demo-plan item 10, skipped).
+- Draft for the next wave: [intangibles-plan.md](intangibles-plan.md).
+
+Agent worktrees can be created from `main` rather than the branch in use. Every brief should
+start with `git merge --ff-only <working branch>` and a check of the HEAD commit.
 
 ## How the work runs
 

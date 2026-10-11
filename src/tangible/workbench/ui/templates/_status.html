@@ -1,3 +1,47 @@
-<div id="inv-status" {% if c.status == 'investigating' %}hx-get="/cases/{{ c.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %} role="status">
-  Status: <strong>{{ c.status }}</strong>{% if c.status == 'investigating' %} - the agent is working; this updates automatically (reload to refresh without JavaScript).{% endif %}
+{% from "_icons.html" import icon %}
+{% set stuck = c.run and c.run.stuck %}
+{% set live = c.status == 'investigating' and not stuck %}
+{% set steps = [('open', 'Open'), ('planning', 'Plan'), ('investigating', 'Investigate'), ('review', 'Review'), ('signed', 'Signed')] %}
+{% set order = {'open': 0, 'planning': 1, 'investigating': 2, 'review': 3, 'signed': 4, 'closed': 5} %}
+{% set at = order.get(c.status, 0) %}
+<div id="inv-status" class="card progress" {% if live %}hx-get="/cases/{{ c.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %} role="status">
+  <ol class="steps" aria-label="Case progress">
+    {% for key, label in steps %}
+    {% set i = loop.index0 %}
+    <li class="{% if i < at or c.status in ('signed', 'closed') and i <= at %}done{% elif i == at %}current{% if live %} live{% endif %}{% endif %}" {% if i == at %}aria-current="step"{% endif %}>
+      <span class="dot">{% if i < at or c.status in ('signed', 'closed') and i <= at %}{{ icon('check') }}{% else %}<span>{{ loop.index }}</span>{% endif %}</span>
+      <span class="label-text">{{ label }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="status-line{% if not live %} sr{% endif %}">
+    {% if live %}<span class="spinner" aria-hidden="true"></span>{% endif %}
+    <span>Status: <strong>{{ c.status }}</strong>{% if live %} - the agent is working; this updates automatically (reload to refresh without JavaScript).{% elif c.status == 'closed' %} - this case was re-based or closed; it is kept as a record.{% endif %}</span>
+  </p>
+  {% if (c.status == 'investigating' and stuck) or c.last_failure or c.last_reset %}
+  <div class="status-notices">
+  {% if c.status == 'investigating' and stuck %}
+  <div class="notice notice-warn" id="inv-stuck">{{ icon('alert') }}<div class="body">
+    <p>This investigation looks stuck:
+    {% if c.run.started_at %}it started {{ c.run.started_at | when }} ({{ c.run.age_minutes }} minutes ago, more than {{ c.run.stuck_after_min }}) and has not finished; the server may have restarted.{% else %}no start was recorded for it, so nothing is running.{% endif %}
+    Resetting puts the case back to <strong>{{ c.run.restores_to }}</strong>; nothing is deleted.</p>
+    {% if is_analyst %}
+    <form method="post" action="/cases/{{ c.id }}/reset">
+      <label for="reset-reason">Reason (required)</label>
+      <div class="inline-field">
+        <input id="reset-reason" name="reason" required placeholder="e.g. server restarted during the run">
+        <button>{{ icon('refresh') }}Reset stuck investigation</button>
+      </div>
+    </form>
+    {% endif %}
+  </div></div>
+  {% endif %}
+  {% if c.last_failure %}
+  <div class="notice notice-error" role="alert" id="inv-failure">{{ icon('alert-circle') }}<div class="body"><strong>The last investigation failed</strong> at {{ c.last_failure.at | when }}: {{ c.last_failure.message }} The case went back to <strong>{{ c.last_failure.restored_status }}</strong>.</div></div>
+  {% endif %}
+  {% if c.last_reset %}
+  <div class="notice notice-info" id="inv-reset">{{ icon('refresh') }}<div class="body"><strong>Investigation reset</strong> by {{ c.last_reset.by }} at {{ c.last_reset.at | when }} ({{ c.last_reset.reason }}). The case went back to <strong>{{ c.last_reset.restored_status }}</strong>.</div></div>
+  {% endif %}
+  </div>
+  {% endif %}
 </div>

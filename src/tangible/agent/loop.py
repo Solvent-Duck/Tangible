@@ -18,6 +18,7 @@ from tangible.agent.llm import LoggedClient, ModelClient, Pricing
 from tangible.agent.prompts import Prompt, load_prompt
 from tangible.agent.snapshot import schema_summary
 from tangible.agent.tools import call_tool, open_context, tool_definitions
+from tangible.agent.tools.findings import verification_feedback
 from tangible.agent.tools.library import library_catalog
 from tangible.agent.tools.runtime import Verifier
 from tangible.agent.verify import verify_numbers
@@ -29,7 +30,10 @@ from tangible.db.session import Conn
 from tangible.evidence.store import EvidenceStore
 from tangible.policy import Policy
 
-PROMPT_VERSIONS = {"system": "v1", "investigate": "v2", "plan": "v2"}
+PROMPT_VERSIONS = {"system": "v1", "investigate": "v4", "plan": "v3"}
+
+# The closing message is stored on the investigation_stopped audit row, capped at this length.
+WRAP_UP_MAX_CHARS = 4000
 
 # After this many consecutive steps whose tool calls all failed, the loop asks for a wrap-up.
 STALL_STEPS = 3
@@ -222,7 +226,7 @@ def _baseline_summary(conn: Conn, case: Case, metric_ids: list[str]) -> str:
         "ORDER BY metric_key, metric_version",
         (metric_ids,),
     ).fetchall()
-    findings = load_findings(conn, case_id=case.id)
+    findings = load_findings(conn, case_id=case.id, current_only=True)
     lines = ["Baseline metrics (tool-computed):"]
     lines += [f"- {k} v{v}: {val if val is not None else 'n/a'}" for k, v, val in metrics]
     lines.append("Baseline rule findings:")
@@ -235,19 +239,37 @@ def _baseline_summary(conn: Conn, case: Case, metric_ids: list[str]) -> str:
     lines += [f"- {k}" for k in dict.fromkeys(leads)] or ["- none"]
     prior = [f for f in findings if f.origin == "model"]
     if prior:
-        lines.append("Findings already recorded by earlier agent runs:")
+        lines.append(
+            "Findings already recorded by earlier agent runs (current ones only; use the id as "
+            "`replaces` to correct one):"
+        )
         lines += [
-            f"- [{f.draft.severity}] {f.draft.check_key}: {f.draft.summary} (verified={f.verified})"
+            f"- [{f.draft.severity}] {f.draft.check_key} (id {f.id}): {f.draft.summary} "
+            f"(verified={f.verified})"
             for f in prior
         ]
     return "\n".join(lines)
 
 
+def _borrower_name(conn: Conn, case: Case) -> str | None:
+    row = conn.execute("SELECT name FROM borrower WHERE id = %s", (case.borrower_id,)).fetchone()
+    return str(row[0]) if row else None
+
+
 def _first_message(
-    plan: dict[str, Any], baseline: str, reference: dict[str, Any], question: str | None
+    plan: dict[str, Any],
+    baseline: str,
+    reference: dict[str, Any],
+    question: str | None,
+    borrower_name: str | None = None,
 ) -> str:
     parts = [
         "Approved investigation plan:", json.dumps(plan, indent=2), "", baseline, "",
+        *(
+            [f"Borrower name on file (a label to search public records with): {borrower_name}", ""]
+            if borrower_name
+            else []
+        ),
         "Reference (tool-computed): the library released for this case and the ledger "
         "snapshot's tables and columns.",
         json.dumps(reference, indent=2),
@@ -294,13 +316,19 @@ def investigate(
     summary = _baseline_summary(conn, case, list(baseline.metric_ids.values()))
     reference = {"library": _catalog(policy), "snapshot_tables": schema_summary()}
     messages: list[dict[str, Any]] = [
-        {"role": "user", "content": _first_message(plan, summary, reference, question)}
+        {
+            "role": "user",
+            "content": _first_message(
+                plan, summary, reference, question, _borrower_name(conn, case)
+            ),
+        }
     ]
     set_case_status(conn, case.id, "investigating")
 
     steps = 0
     model_id = ""
     stop_reason = "end_turn"
+    wrap_up = ""  # the model's closing message, kept for the analyst (unverified prose)
     stalled = 0  # consecutive steps whose tool calls all failed
     notified: set[str] = set()  # wrap-up notices already sent: "budget", "stall"
     while True:
@@ -315,6 +343,7 @@ def investigate(
         model_id = resp.model_id or model_id
         if not resp.tool_calls:
             stop_reason = "end_turn"
+            wrap_up = resp.text.strip()[:WRAP_UP_MAX_CHARS]
             break
         blocks: list[dict[str, Any]] = []
         if resp.text:
@@ -330,7 +359,11 @@ def investigate(
             if out.error is not None:
                 payload, is_error = out.error, True
             else:
-                payload, is_error = json.dumps(out.result, ensure_ascii=False), False
+                shown = out.result
+                if c["name"] == "record_finding" and isinstance(shown, dict):
+                    # Feedback for the model only; the logged tool_call result is unchanged.
+                    shown = {**shown, "status": verification_feedback(ctx, shown)}
+                payload, is_error = json.dumps(shown, ensure_ascii=False), False
             results.append(
                 {
                     "type": "tool_result",
@@ -357,11 +390,16 @@ def investigate(
         (
             case.tenant_id,
             case.id,
-            json.dumps({"stop_reason": stop_reason, "steps": steps, "cost_usd": str(cost)}),
+            json.dumps(
+                {"stop_reason": stop_reason, "steps": steps, "cost_usd": str(cost)}
+                | ({"wrap_up": wrap_up} if wrap_up else {})
+            ),
         ),
     )
     set_case_status(conn, case.id, "review")
-    model = [f for f in load_findings(conn, case_id=case.id) if f.origin == "model"]
+    model = [
+        f for f in load_findings(conn, case_id=case.id, current_only=True) if f.origin == "model"
+    ]
     return InvestigationResult(
         stop_reason, steps, cost,
         [f.id for f in model],

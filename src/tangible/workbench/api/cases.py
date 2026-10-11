@@ -43,6 +43,10 @@ class SendBack(BaseModel):
     question: str
 
 
+class ResetInvestigation(BaseModel):
+    reason: str
+
+
 @router.get("")
 def list_cases(conn: ConnDep, p: PrincipalDep) -> list[dict[str, Any]]:
     return services.list_cases(conn, p)
@@ -59,8 +63,10 @@ def create_case(body: CreateCase, conn: ConnDep, p: PrincipalDep) -> dict[str, A
 
 
 @router.get("/{case_id}")
-def get_case(case_id: UUID, conn: ConnDep, p: PrincipalDep) -> dict[str, Any]:
-    return services.get_case_detail(conn, p, str(case_id))
+def get_case(
+    case_id: UUID, conn: ConnDep, p: PrincipalDep, settings: SettingsDep
+) -> dict[str, Any]:
+    return services.get_case_detail(conn, p, str(case_id), settings)
 
 
 @router.post("/{case_id}/assign")
@@ -75,7 +81,7 @@ def propose_plan(
     try:
         return services.propose_plan(conn, settings, p, str(case_id))
     except ModelConfigError as e:
-        raise HTTPException(503, str(e)) from None
+        raise HTTPException(503, services.describe_error(e)) from None
 
 
 @router.post("/{case_id}/plan/approve")
@@ -96,7 +102,7 @@ def investigate(
         with tenant_session(settings.database_url, p.tenant_id) as conn:
             job = services.start_investigation(conn, settings, p, str(case_id))
     except ModelConfigError as e:
-        raise HTTPException(503, str(e)) from None
+        raise HTTPException(503, services.describe_error(e)) from None
     background.add_task(job.run)
     return {"case_id": str(case_id), "status": "investigating"}
 
@@ -113,9 +119,17 @@ def send_back(
         with tenant_session(settings.database_url, p.tenant_id) as conn:
             job = services.start_send_back(conn, settings, p, str(case_id), body.question)
     except ModelConfigError as e:
-        raise HTTPException(503, str(e)) from None
+        raise HTTPException(503, services.describe_error(e)) from None
     background.add_task(job.run)
     return {"case_id": str(case_id), "status": "investigating"}
+
+
+@router.post("/{case_id}/reset-investigation")
+def reset_investigation(
+    case_id: UUID, body: ResetInvestigation, conn: ConnDep, p: PrincipalDep
+) -> dict[str, Any]:
+    """Un-stick an 'investigating' case whose run was lost (e.g. a server restart)."""
+    return services.reset_stuck_investigation(conn, p, str(case_id), body.reason)
 
 
 @router.post("/{case_id}/findings/{finding_id}/review")
@@ -162,5 +176,5 @@ def sign(case_id: UUID, conn: ConnDep, p: PrincipalDep, settings: SettingsDep) -
 
 
 @router.post("/{case_id}/rebase", status_code=201)
-def rebase(case_id: UUID, conn: ConnDep, p: PrincipalDep) -> dict[str, Any]:
-    return services.rebase_case(conn, p, str(case_id))
+def rebase(case_id: UUID, conn: ConnDep, p: PrincipalDep, settings: SettingsDep) -> dict[str, Any]:
+    return services.rebase_case(conn, p, str(case_id), settings)

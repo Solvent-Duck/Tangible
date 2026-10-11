@@ -1,52 +1,97 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon, band_badge %}
 {% block title %}Assessment{% endblock %}
 {% block body %}
-<h1>Assessment</h1>
-<p>{% if a.case_id %}<a href="/cases/{{ a.case_id }}">Case</a> | {% endif %}as of {{ a.as_of }} | signed by {{ a.created_by }} at {{ a.created_at }} | policy {{ a.policy_version }}</p>
-<dl>
-  <dt>Decision band</dt><dd><strong>{{ a.decision_band or 'No band (knock-out)' }}</strong></dd>
-  <dt>Suggested limit</dt><dd>{{ a.suggested_limit if a.suggested_limit is not none else 'none' }}</dd>
-</dl>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Cases</a>{% if a.case_id %}<span class="sep">/</span><a href="/cases/{{ a.case_id }}">Case <code>{{ a.case_id | short_id }}</code></a>{% endif %}<span class="sep">/</span><span aria-current="page">Assessment</span></nav>
+<div class="page-head">
+  <div class="titles">
+    <h1>Assessment</h1>
+    <div class="facts">
+      {% if a.case_id %}<span><a href="/cases/{{ a.case_id }}">Case</a></span>{% endif %}
+      <span><span class="k">As of</span> {{ a.as_of | when }}</span>
+      <span><span class="k">Signed by</span> {{ a.created_by }} at {{ a.created_at | when }}</span>
+      <span><span class="k">Policy</span> <code>{{ a.policy_version }}</code></span>
+    </div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/assessments/{{ a.id }}/export">{{ icon('download') }}Export JSON</a>
+    {% if can_replay %}
+    <form method="post" action="/assessments/{{ a.id }}/replay" class="inline"><button>{{ icon('refresh') }}Replay and compare</button></form>
+    {% endif %}
+  </div>
+</div>
 
-<h2>{% if a.decision_band %}Band {{ a.decision_band }} because{% else %}No band because{% endif %}</h2>
-<table><caption class="sr">Policy rules that fired, in order</caption>
-<thead><tr><th scope="col">Step</th><th scope="col">Rule</th><th scope="col">Saw</th><th scope="col">Test</th><th scope="col">Outcome</th></tr></thead>
-<tbody>
-{% for r in rules %}
-<tr><td>{{ r.step }}</td><td>{{ r.rule }}</td><td>{{ r.saw if r.saw is defined else '-' }}</td>
-<td>{% if r.op %}{{ r.op }} {{ r.threshold }}{% else %}-{% endif %}</td>
-<td><strong>{{ r.outcome }}</strong>{% if r.extra %} <small>{% for k, v in r.extra.items() %}{{ k }}={{ v }} {% endfor %}</small>{% endif %}</td></tr>
-{% endfor %}
-</tbody></table>
+<section class="card decision" aria-label="Decision">
+  {{ band_badge(a.decision_band) }}
+  <dl class="mb-0" style="margin:0">
+    <dt class="eyebrow">Decision band</dt>
+    <dd class="big" style="margin:0">{% if a.decision_band %}Band {% endif %}<strong>{{ a.decision_band or 'No band (knock-out)' }}</strong></dd>
+    <dd class="frozen" style="margin:.45rem 0 0">{{ icon('lock') }}Frozen at signing; overrides are recorded beside it</dd>
+  </dl>
+  <dl class="limit" style="margin:0">
+    <dt class="eyebrow">Suggested limit</dt>
+    <dd class="big" style="margin:0">{% if a.suggested_limit is not none %}{{ a.suggested_limit | amount }}{% else %}<span class="muted">none</span>{% endif %}</dd>
+  </dl>
+</section>
 
-<h2>Metrics</h2>
-<table><caption class="sr">Metric values</caption>
-<thead><tr><th scope="col">Metric</th><th scope="col">Version</th><th scope="col">Value</th></tr></thead>
-<tbody>{% for m in a.metrics %}<tr><th scope="row">{{ m.key }}</th><td>{{ m.version }}</td><td>{{ m.value if m.value is not none else 'not available' }}</td></tr>{% endfor %}</tbody></table>
+<div class="stack mt-3">
+<section class="card" aria-labelledby="why-h">
+  <div class="card-head">
+    <h2 id="why-h">{% if a.decision_band %}Band {{ a.decision_band }} because{% else %}No band because{% endif %}</h2>
+    <span class="help">Policy rules that fired, in order</span>
+  </div>
+  <table class="table"><caption class="sr">Policy rules that fired, in order</caption>
+  <thead><tr><th scope="col">Step</th><th scope="col">Rule</th><th scope="col">Saw</th><th scope="col">Test</th><th scope="col">Outcome</th></tr></thead>
+  <tbody>
+  {% for r in rules %}
+  <tr><td><span class="chip">{{ r.step }}</span></td><td class="wrap">{{ r.rule }}</td><td class="mono wrap">{{ r.saw if r.saw is defined else '-' }}</td>
+  <td class="mono">{% if r.op %}{{ r.op }} {{ r.threshold }}{% else %}-{% endif %}</td>
+  <td><span class="outcome oc-{{ r.outcome }}">{{ r.outcome }}</span>{% if r.extra %}<span class="extra">{% for k, v in r.extra.items() %}{{ k }}={{ v }} {% endfor %}</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody></table>
+</section>
 
-<h2>Findings</h2>
-{% for f in a.findings %}
-<article class="finding sev-{{ f.severity }}">
-  <h4><span class="sev">{{ f.severity | upper }}</span> {{ f.summary }}</h4>
-  <p class="meta">origin {{ f.origin }}{% if f.origin == 'model' %} | {{ 'verified' if f.verified else 'UNVERIFIED' }}{% endif %} | state {{ f.review_state }}
-  {% if a.case_id %}| <a href="/cases/{{ a.case_id }}/findings/{{ f.id }}/trace">trace to source</a>{% endif %}</p>
-</article>
-{% else %}<p>No findings.</p>{% endfor %}
+<section aria-labelledby="af-h">
+  <div class="section-title"><h2 id="af-h">Findings <span class="count">{{ a.findings | length }}</span></h2></div>
+  {% for f in a.findings %}
+  <article class="finding sev-{{ f.severity }}">
+    <h4><span class="sev">{{ f.severity | upper }}</span> {{ f.summary }}</h4>
+    <div class="chips meta">
+      {% if f.origin == 'model' %}<span class="chip chip-model">{{ icon('sparkles') }}origin {{ f.origin }}</span>{% if f.verified %}<span class="chip chip-ok">{{ icon('check') }}verified</span>{% else %}<span class="chip chip-warn">{{ icon('alert') }}UNVERIFIED</span>{% endif %}
+      {% else %}<span class="chip">{{ icon('ruler') }}origin {{ f.origin }}</span>{% endif %}
+      <span class="pill rs-{{ f.review_state }}">state {{ f.review_state }}</span>
+      {% if a.case_id %}<a class="trace-link" href="/cases/{{ a.case_id }}/findings/{{ f.id }}/trace">Trace to source{{ icon('arrow-right') }}</a>{% endif %}
+    </div>
+  </article>
+  {% else %}<div class="card"><div class="empty">{{ icon('check-circle') }}<strong>No findings.</strong></div></div>{% endfor %}
+</section>
 
-<h2 id="overrides">Overrides</h2>
-<p>Overrides are recorded beside the assessment; the assessment itself never changes.</p>
-{% for o in a.overrides %}<p>{{ o.at }} - {{ o.by }}: {{ o.reason }}</p>{% else %}<p>None.</p>{% endfor %}
-{% if can_override %}
-<form method="post" action="/assessments/{{ a.id }}/override">
-  <label for="reason">Reason (required)</label>
-  <input id="reason" name="reason" required size="60">
-  <button>Record override</button>
-</form>
-{% endif %}
+<section class="card" aria-labelledby="am-h">
+  <div class="card-head"><h2 id="am-h">Metrics <span class="count">{{ a.metrics | length }}</span></h2><span class="help">As frozen in the assessment</span></div>
+  <table class="table hover metrics"><caption class="sr">Metric values</caption>
+  <thead><tr><th scope="col">Metric</th><th scope="col" class="num">Value</th><th scope="col" class="num">Version</th></tr></thead>
+  <tbody>{% for m in a.metrics %}<tr><th scope="row">{{ m.key | metric_label }} <small class="mono" style="color:var(--ink-3)">{{ m.key }}</small></th><td class="num">{{ m.value | metric_value(m.key) }}</td><td class="num ver">v{{ m.version }}</td></tr>{% endfor %}</tbody></table>
+</section>
 
-<h2>Tools</h2>
-<p><a href="/assessments/{{ a.id }}/export">Export JSON</a></p>
-{% if can_replay %}
-<form method="post" action="/assessments/{{ a.id }}/replay"><button>Replay and compare</button></form>
-{% endif %}
+<section class="card" aria-labelledby="overrides">
+  <div class="card-head"><h2 id="overrides">Overrides <span class="count">{{ a.overrides | length }}</span></h2></div>
+  <div class="card-body">
+    <p class="help">Overrides are recorded beside the assessment; the assessment itself never changes.</p>
+    <ul class="overrides">
+    {% for o in a.overrides %}<li><span><strong>{{ o.by }}</strong> <span class="muted">· {{ o.at | when }}</span></span><span>{{ o.reason }}</span></li>{% else %}<li class="muted">None.</li>{% endfor %}
+    </ul>
+  </div>
+  {% if can_override %}
+  <div class="card-foot">
+  <form method="post" action="/assessments/{{ a.id }}/override">
+    <label for="reason">Reason (required)</label>
+    <div class="inline-field">
+      <input id="reason" name="reason" required placeholder="Why the lender is departing from this assessment">
+      <button class="btn-primary">{{ icon('pen') }}Record override</button>
+    </div>
+  </form>
+  </div>
+  {% endif %}
+</section>
+</div>
 {% endblock %}

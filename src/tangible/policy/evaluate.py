@@ -9,7 +9,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from typing import Any, Literal
 
 from tangible.checks.registry import Severity
 from tangible.policy.loader import Policy
@@ -19,12 +19,19 @@ from tangible.policy.schema import BAND_ORDER, PolicySpec
 _CENT = Decimal("0.01")
 
 
+FindingOrigin = Literal["rule", "model"]
+
+
 @dataclass(frozen=True)
 class FindingInput:
+    """`origin` is "rule" for a check's finding and "model" for the agent's. The default is
+    "rule", so a caller that forgets it gets the stricter (open holds block) behaviour."""
+
     finding_id: str
     check_key: str
     severity: Severity
     state: ReviewState
+    origin: FindingOrigin = "rule"
 
 
 @dataclass(frozen=True)
@@ -71,30 +78,82 @@ def evaluate(
 
     # 1. knockout
     ko = spec.knockout
-    blocking = [
-        f for f in findings if f.severity == ko.open_finding_severity and f.state in ko.hold_states
-    ]
-    for f in sorted(blocking, key=lambda f: f.finding_id):
-        rules.append(
-            {
-                "rule": f"knockout: hold finding {f.check_key} is {f.state}",
-                "step": "knockout",
-                "finding_id": f.finding_id,
-                "saw": f.state,
-                "op": "in",
-                "threshold": ",".join(ko.hold_states),
-                "outcome": "knockout",
-            }
-        )
-    if blocking:
-        return done(None, None)
+    holds = [f for f in findings if f.severity == ko.open_finding_severity]
+    if ko.model_hold_states is None:
+        # Policies that do not distinguish origin (0.2.x): the original rule, unchanged.
+        blocking = [f for f in holds if f.state in ko.hold_states]
+        for f in sorted(blocking, key=lambda f: f.finding_id):
+            rules.append(
+                {
+                    "rule": f"knockout: hold finding {f.check_key} is {f.state}",
+                    "step": "knockout",
+                    "finding_id": f.finding_id,
+                    "saw": f.state,
+                    "op": "in",
+                    "threshold": ",".join(ko.hold_states),
+                    "outcome": "knockout",
+                }
+            )
+        if blocking:
+            return done(None, None)
+        threshold = ",".join(ko.hold_states)
+    else:
+        # Rule holds block in `hold_states`; agent holds only in `model_hold_states`
+        # (an agent finding is a lead until an analyst accepts it). Every hold is reported.
+        model_states = ko.model_hold_states
+        blocking = []
+        for f in sorted(holds, key=lambda f: f.finding_id):
+            is_model = f.origin == "model"
+            states = model_states if is_model else ko.hold_states
+            blocks = f.state in states
+            if blocks:
+                blocking.append(f)
+            if not is_model:
+                if blocks:
+                    rules.append(
+                        {
+                            "rule": f"knockout: hold finding {f.check_key} is {f.state}",
+                            "step": "knockout",
+                            "finding_id": f.finding_id,
+                            "origin": "rule",
+                            "saw": f.state,
+                            "op": "in",
+                            "threshold": ",".join(states),
+                            "outcome": "knockout",
+                        }
+                    )
+                continue
+            if blocks:
+                text = f"knockout: agent hold finding {f.check_key} is {f.state}"
+            elif f.state == "open":
+                text = (
+                    f"knockout: agent hold finding {f.check_key} is open (not accepted), "
+                    "not blocking"
+                )
+            else:
+                text = f"knockout: agent hold finding {f.check_key} is {f.state}, not blocking"
+            rules.append(
+                {
+                    "rule": text,
+                    "step": "knockout",
+                    "finding_id": f.finding_id,
+                    "origin": "model",
+                    "saw": f.state,
+                    "op": "in",
+                    "threshold": ",".join(states),
+                    "outcome": "knockout" if blocks else "not_blocking",
+                }
+            )
+        if blocking:
+            return done(None, None)
+        threshold = f"rule:{','.join(ko.hold_states)};model:{','.join(model_states)}"
     rules.append(
         {
             "rule": "knockout: no blocking hold finding",
             "step": "knockout",
             "saw": str(len(findings)),
             "op": "in",
-            "threshold": ",".join(ko.hold_states),
+            "threshold": threshold,
             "outcome": "pass",
         }
     )

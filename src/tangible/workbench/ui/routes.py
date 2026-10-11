@@ -16,6 +16,7 @@ from typing import Annotated, Any
 from urllib.parse import quote
 from uuid import UUID
 
+import psycopg
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -31,8 +32,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 from tangible.agent.llm import ModelConfigError
-from tangible.db.session import Conn, tenant_session
-from tangible.workbench import services
+from tangible.backtest import view as backtest_view
+from tangible.db.session import Conn, admin_connect, tenant_session
+from tangible.workbench import audit, services
 from tangible.workbench.auth import (
     TENANT_HEADER,
     USER_HEADER,
@@ -49,7 +51,7 @@ from tangible.workbench.oidc import (
     OidcRuntime,
     safe_next,
 )
-from tangible.workbench.ui import queries
+from tangible.workbench.ui import display, present, queries
 
 HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"
@@ -68,6 +70,10 @@ templates = Jinja2Templates(directory=HERE / "templates")  # autoescape is on fo
 templates.env.globals["HTMX_URL"] = HTMX_URL
 templates.env.globals["HTMX_SRI"] = HTMX_SRI
 templates.env.filters["pretty"] = lambda v: json.dumps(v, indent=2, sort_keys=True, default=str)
+templates.env.filters.update(display.FILTERS)
+templates.env.filters["tablify"] = present.view
+templates.env.filters["args_view"] = present.args_view
+templates.env.filters["short_ref"] = present.short_ref
 
 router = APIRouter()
 
@@ -230,8 +236,9 @@ def guarded(fn: Callable[..., Any]) -> Callable[..., Any]:
             if conn is not None:
                 conn.rollback()
             status, title = _ERRORS.get(type(e), (503, "Model not available"))
+            message = str(e) if type(e) in _ERRORS else services.describe_error(e)
             return render(
-                kw["request"], "error.html", kw.get("p"), status, title=title, message=str(e)
+                kw["request"], "error.html", kw.get("p"), status, title=title, message=message
             )
 
     return wrapper
@@ -332,11 +339,41 @@ def _dev_only(request: Request) -> None:
         raise HTTPException(404)
 
 
+DEV_TENANT_LIMIT = 30
+
+
+def _dev_tenants(database_url: str) -> list[dict[str, Any]]:
+    """Tenants for the dev sign-in picker: id, name, created_at and a case count, nothing else.
+
+    This is a deliberate cross-tenant read, so it uses the admin connection (`tangible_app` is
+    confined to one tenant by RLS and cannot list tenants). It is safe only because it is
+    reachable solely from `dev_login`, which calls `_dev_only` first: with TANGIBLE_DEV_AUTH
+    unset the route is a 404 and this function never runs. The same setting that lets anyone
+    sign in as any user without a password is what exposes the list, so it reveals nothing
+    dev mode does not already allow. Never call it from a request path that lacks that gate.
+    Demo tenants (name starting "demo-") sort first, then newest first.
+    """
+    with admin_connect(database_url) as admin:
+        rows = admin.execute(
+            "SELECT t.id, t.name, t.created_at, "
+            "       (SELECT count(*) FROM case_file c WHERE c.tenant_id = t.id) "
+            "FROM tenant t "
+            "ORDER BY (t.name LIKE 'demo-%%') DESC, t.created_at DESC "
+            "LIMIT %s",
+            (DEV_TENANT_LIMIT,),
+        ).fetchall()
+    return [
+        {"id": str(i), "name": n, "created_at": at.strftime("%Y-%m-%d %H:%M"), "cases": c}
+        for i, n, at, c in rows
+    ]
+
+
 @router.get("/dev/login", response_class=HTMLResponse)
 def dev_login(request: Request, settings: SettingsDep, tenant: str = "") -> Response:
     _dev_only(request)
     tenant = tenant.strip()
     people: list[dict[str, str]] | None = None
+    tenants: list[dict[str, Any]] | None = None
     error = None
     if tenant:
         try:
@@ -345,7 +382,15 @@ def dev_login(request: Request, settings: SettingsDep, tenant: str = "") -> Resp
                 people = queries.users(conn)
         except ValueError:
             error = "That is not a valid tenant id (a UUID)."
-    return render(request, "login.html", None, tenant=tenant, people=people, error=error)
+    else:
+        try:
+            tenants = _dev_tenants(settings.database_url)
+        except psycopg.Error as e:
+            tenants = []
+            error = f"Could not list tenants ({type(e).__name__}); paste a tenant id instead."
+    return render(
+        request, "login.html", None, tenant=tenant, people=people, tenants=tenants, error=error
+    )
 
 
 @router.post("/dev/login")
@@ -453,14 +498,17 @@ def _latest_plan(detail: dict[str, Any]) -> dict[str, Any] | None:
 
 @router.get("/cases/{case_id}", response_class=HTMLResponse)
 @guarded
-def case_page(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) -> Response:
-    d = services.get_case_detail(conn, p, _id(case_id))
+def case_page(
+    request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal, settings: SettingsDep
+) -> Response:
+    d = services.get_case_detail(conn, p, _id(case_id), settings)
+    documents = services.case_documents(conn, p, _id(case_id)) if p.role == "analyst" else []
     groups = [(sev, [f for f in d["findings"] if f["severity"] == sev]) for sev in SEVERITY_ORDER]
     return render(
-        request, "case.html", p, c=d,
+        request, "case.html", p, c=d, borrower=queries.borrower_name(conn, d["borrower_id"]),
         groups=[(s, fs) for s, fs in groups if fs],
         metrics=queries.case_metrics(conn, d["borrower_id"], d["as_of"]),
-        late=queries.late_uploads(conn, d["borrower_id"], d["as_of"]),
+        documents=documents, late=sum(1 for x in documents if not x["included"]),
         plan=_latest_plan(d), is_analyst=p.role == "analyst",
     )  # fmt: skip
 
@@ -468,13 +516,11 @@ def case_page(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) -> 
 @router.get("/cases/{case_id}/status", response_class=HTMLResponse)
 @guarded
 def case_status(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) -> Response:
-    # list_cases applies the same role filtering as the case page, without a per-poll audit row.
-    row = next((c for c in services.list_cases(conn, p) if c["id"] == _id(case_id)), None)
-    if row is None:
-        raise services.NotFound(f"case {case_id} not found")
+    # Same access as the case page, without a per-poll audit row.
+    row = services.case_status_view(conn, p, _id(case_id))
     if not is_htmx(request):
         return redirect(f"/cases/{case_id}")
-    resp = render(request, "_status.html", p, c=row)
+    resp = render(request, "_status.html", p, c=row, is_analyst=p.role == "analyst")
     if row["status"] != "investigating":
         resp.headers["HX-Refresh"] = "true"  # finished: reload for findings and metrics
     return resp
@@ -529,6 +575,39 @@ def investigate(
         job = services.start_investigation(conn, settings, p, _id(case_id))
     background.add_task(job.run)
     return redirect(f"/cases/{case_id}", "Investigation started.")
+
+
+@router.post("/cases/reset")
+@guarded
+def reset_by_id(
+    request: Request,
+    conn: UiConn,
+    p: UiPrincipal,
+    case_id: Annotated[str, Form()] = "",
+    reason: Annotated[str, Form()] = "",
+) -> Response:
+    """The credit admin's way in: an unsigned case has no page for them, so it is reset by id."""
+    try:
+        cid = str(uuid.UUID(case_id.strip()))
+    except ValueError:
+        raise services.Invalid("that is not a case id") from None
+    res = services.reset_stuck_investigation(conn, p, cid, reason)
+    return redirect("/cases/new", f"Investigation reset; case {cid} is back to '{res['status']}'.")
+
+
+@router.post("/cases/{case_id}/reset")
+@guarded
+def reset(
+    request: Request,
+    case_id: UUID,
+    conn: UiConn,
+    p: UiPrincipal,
+    reason: Annotated[str, Form()] = "",
+) -> Response:
+    res = services.reset_stuck_investigation(conn, p, _id(case_id), reason)
+    return redirect(
+        f"/cases/{case_id}", f"Investigation reset; the case is back to '{res['status']}'."
+    )
 
 
 @router.post("/cases/{case_id}/send-back")
@@ -593,11 +672,17 @@ def upload(
     p: UiPrincipal,
     settings: SettingsDep,
     file: Annotated[UploadFile | None, File()] = None,
+    rebase: Annotated[str, Form()] = "",
 ) -> Response:
     if file is None:
         raise services.Invalid("choose a file to upload")
     data = file.file.read(settings.max_upload_bytes + 1)
-    res = services.upload_document(conn, settings, p, _id(case_id), file.filename or "", data)
+    name = file.filename or ""
+    if rebase == "1":  # "Upload and rebase": one transaction, so nothing is half done
+        new = services.upload_and_rebase(conn, settings, p, _id(case_id), name, data)
+        return redirect(f"/cases/{new['id']}#documents", _rebase_message(new, uploaded=True),
+                        "error" if new["documents_unread"] else "ok")  # fmt: skip
+    res = services.upload_document(conn, settings, p, _id(case_id), name, data)
     return redirect(f"/cases/{case_id}#documents", res["note"])
 
 
@@ -613,7 +698,10 @@ def sign_confirm(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) 
     for f in d["findings"]:
         key = f"{f['severity']} / {f['review_state']}"
         counts[key] = counts.get(key, 0) + 1
-    return render(request, "sign.html", p, c=d, counts=sorted(counts.items()))
+    return render(
+        request, "sign.html", p, c=d, counts=sorted(counts.items()),
+        borrower=queries.borrower_name(conn, d["borrower_id"]),
+    )  # fmt: skip
 
 
 @router.post("/cases/{case_id}/sign")
@@ -632,11 +720,25 @@ def sign(
     return redirect(f"/assessments/{res['assessment_id']}", "Signed. The assessment is frozen.")
 
 
+def _rebase_message(new: dict[str, Any], *, uploaded: bool = False) -> str:
+    msg = "Uploaded and re-based: " if uploaded else "Re-based: "
+    msg += "this is the new case, dated now; the old one is closed."
+    n = new["documents_read"]
+    if n:
+        msg += f" {n} document(s) read; the baseline checks will compare them with the ledger."
+    for u in new["documents_unread"]:
+        msg += f" Could not read {u['filename'] or u['pull_id']}: {u['error']}."
+    return msg
+
+
 @router.post("/cases/{case_id}/rebase")
 @guarded
-def rebase(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) -> Response:
-    new = services.rebase_case(conn, p, _id(case_id))
-    return redirect(f"/cases/{new['id']}", "Re-based: this is the new case; the old one is closed.")
+def rebase(
+    request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal, settings: SettingsDep
+) -> Response:
+    new = services.rebase_case(conn, p, _id(case_id), settings)
+    return redirect(f"/cases/{new['id']}#documents", _rebase_message(new),
+                    "error" if new["documents_unread"] else "ok")  # fmt: skip
 
 
 @router.get("/cases/{case_id}/findings/{finding_id}/trace", response_class=HTMLResponse)
@@ -651,6 +753,26 @@ def trace(
 ) -> Response:
     t = services.trace_finding(conn, settings, p, _id(case_id), _id(finding_id))
     return render(request, "trace.html", p, t=t, case_id=_id(case_id))
+
+
+# ---------------------------------------------------------------- backtest
+
+
+@router.get("/backtest", response_class=HTMLResponse)
+@guarded
+def backtest_page(request: Request, conn: UiConn, p: UiPrincipal) -> Response:
+    """Latest backtest report (synthetic cohort). Any signed-in role; the view is audited."""
+    loaded = backtest_view.load()
+    audit.record(
+        conn, p, "view", "backtest_report", None,
+        {"path": str(loaded.path), "found": loaded.data is not None},
+    )  # fmt: skip
+    summary = backtest_view.summarise(loaded.data) if loaded.data is not None else None
+    return render(
+        request, "backtest.html", p, s=summary, problem=loaded.problem,
+        report_path=str(loaded.path),
+        hint=backtest_view.GENERATE_HINT,
+    )  # fmt: skip
 
 
 # ---------------------------------------------------------------- assessments

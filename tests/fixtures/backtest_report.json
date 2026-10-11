@@ -1,0 +1,394 @@
+{
+ "loans": [
+  {
+   "band": null,
+   "borrower_key": "synth-000",
+   "decision_date": "2011-11-25",
+   "findings": [
+    {
+     "check_key": "time_gaps",
+     "origin": "rule",
+     "severity": "info"
+    },
+    {
+     "check_key": "partial_coverage",
+     "origin": "rule",
+     "severity": "hold"
+    }
+   ],
+   "hidden_rows": 835,
+   "limit": null,
+   "loan_amount": "41203.17",
+   "loss_amount": "24721.90",
+   "metrics": {
+    "ad_spend_ratio_change_30v30": "-0.1438968360876061808251027210",
+    "aged_stock_share": "0.4268773243885956815802010416",
+    "cash_runway": null
+   },
+   "outcome": "defaulted",
+   "planted": [
+    "partial_coverage",
+    "undisclosed_lender_debit"
+   ],
+   "replay_match": true,
+   "visible_rows": 35343
+  },
+  {
+   "band": "A",
+   "borrower_key": "synth-001",
+   "decision_date": "2011-11-25",
+   "findings": [
+    {
+     "check_key": "time_gaps",
+     "origin": "rule",
+     "severity": "info"
+    },
+    {
+     "check_key": "time_gaps",
+     "origin": "rule",
+     "severity": "info"
+    }
+   ],
+   "hidden_rows": 803,
+   "limit": "54336.71",
+   "loan_amount": "33960.44",
+   "loss_amount": "0.00",
+   "metrics": {
+    "ad_spend_ratio_change_30v30": "-0.2724757884724551482587971977",
+    "aged_stock_share": "0.1231368739738700215803060816",
+    "cash_runway": null
+   },
+   "outcome": "repaid",
+   "planted": [],
+   "replay_match": true,
+   "visible_rows": 34416
+  }
+ ],
+ "policy": {
+  "sha256": "6b86a19a43e75e1a16de1be775aed211b9a9c678a573d13053fd697687366001",
+  "version": "0.2.2"
+ },
+ "stats": {
+  "agent": {
+   "status": "not run"
+  },
+  "cohort": {
+   "default_rate": 0.4,
+   "defaulted": 8,
+   "loans": 20,
+   "planted_loans": 8,
+   "repaid": 12,
+   "synthetic": 20,
+   "total_loan_amount": 861749.29,
+   "total_loss_amount": 217286.02,
+   "with_band": 15
+  },
+  "false_alarms": {
+   "alarms": 2,
+   "by_check": {
+    "books_vs_processor": 1,
+    "orders_vs_payouts": 1
+   },
+   "clean_loans": 12,
+   "loans_with_alarm": 1,
+   "per_clean_loan": 0.16666666666666666
+  },
+  "finding_lift": {
+   "books_vs_processor": {
+    "absent": 18,
+    "default_rate_absent": 0.3888888888888889,
+    "default_rate_present": 0.5,
+    "lift": 1.2857142857142856,
+    "present": 2
+   },
+   "orders_vs_payouts": {
+    "absent": 17,
+    "default_rate_absent": 0.35294117647058826,
+    "default_rate_present": 0.6666666666666666,
+    "lift": 1.8888888888888886,
+    "present": 3
+   },
+   "partial_coverage": {
+    "absent": 19,
+    "default_rate_absent": 0.3684210526315789,
+    "default_rate_present": 1.0,
+    "lift": 2.7142857142857144,
+    "present": 1
+   },
+   "payouts_vs_deposits": {
+    "absent": 16,
+    "default_rate_absent": 0.25,
+    "default_rate_present": 1.0,
+    "lift": 4.0,
+    "present": 4
+   },
+   "self_transfers_as_revenue": {
+    "absent": 18,
+    "default_rate_absent": 0.3333333333333333,
+    "default_rate_present": 1.0,
+    "lift": 3.0,
+    "present": 2
+   },
+   "time_gaps": {
+    "absent": 19,
+    "default_rate_absent": 0.3684210526315789,
+    "default_rate_present": 1.0,
+    "lift": 2.7142857142857144,
+    "present": 1
+   },
+   "unexplained_recurring_debit": {
+    "absent": 15,
+    "default_rate_absent": 0.2,
+    "default_rate_present": 1.0,
+    "lift": 5.0,
+    "present": 5
+   }
+  },
+  "loss_by_band": {
+   "A": {
+    "count": 6,
+    "default_rate": 0.0,
+    "defaults": 0,
+    "loan_amount": 217445.44,
+    "loss_amount": 0.0
+   },
+   "B": {
+    "count": 4,
+    "default_rate": 0.0,
+    "defaults": 0,
+    "loan_amount": 171921.39,
+    "loss_amount": 0.0
+   },
+   "C": {
+    "count": 5,
+    "default_rate": 0.6,
+    "defaults": 3,
+    "loan_amount": 290950.6,
+    "loss_amount": 108426.91
+   },
+   "D": {
+    "count": 0,
+    "default_rate": null,
+    "defaults": 0,
+    "loan_amount": 0.0,
+    "loss_amount": 0.0
+   },
+   "none": {
+    "count": 5,
+    "default_rate": 1.0,
+    "defaults": 5,
+    "loan_amount": 181431.86,
+    "loss_amount": 108859.11
+   }
+  },
+  "metrics": {
+   "ad_spend_ratio_change_30v30": {
+    "auc": 0.6875,
+    "direction": "higher_is_riskier",
+    "ks": 0.5416666666666666,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "aged_stock_share": {
+    "auc": 0.6041666666666667,
+    "direction": "lower_is_riskier",
+    "ks": 0.4166666666666667,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "cash_runway": {
+    "auc": 1.0,
+    "direction": "lower_is_riskier",
+    "ks": 1.0,
+    "n": 5,
+    "none_share": 0.75
+   },
+   "days_of_inventory": {
+    "auc": 0.7083333333333333,
+    "direction": "lower_is_riskier",
+    "ks": 0.5,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "days_of_inventory_change_30v30": {
+    "auc": 0.5208333333333333,
+    "direction": "lower_is_riskier",
+    "ks": 0.20833333333333331,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "days_of_inventory_slope_13w": {
+    "auc": 0.6979166666666667,
+    "direction": "lower_is_riskier",
+    "ks": 0.375,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "gross_margin_est": {
+    "auc": 0.6979166666666666,
+    "direction": "higher_is_riskier",
+    "ks": 0.4166666666666667,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "history_days": {
+    "auc": 0.5,
+    "direction": "higher_is_riskier",
+    "ks": 0.0,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "net_revenue": {
+    "auc": 0.5833333333333334,
+    "direction": "higher_is_riskier",
+    "ks": 0.29166666666666663,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "payables_days": {
+    "auc": 0.5625,
+    "direction": "higher_is_riskier",
+    "ks": 0.33333333333333337,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "payables_days_change_30v30": {
+    "auc": 0.59375,
+    "direction": "lower_is_riskier",
+    "ks": 0.33333333333333337,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "payables_days_slope_13w": {
+    "auc": 0.5625,
+    "direction": "higher_is_riskier",
+    "ks": 0.29166666666666663,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "payables_discipline": {
+    "auc": 0.6302083333333334,
+    "direction": "higher_is_riskier",
+    "ks": 0.3333333333333333,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "payout_lag": {
+    "auc": 0.5,
+    "direction": "higher_is_riskier",
+    "ks": 0.0,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "payout_lag_change_30v30": {
+    "auc": 0.5,
+    "direction": "higher_is_riskier",
+    "ks": 0.0,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "payout_lag_slope_13w": {
+    "auc": 0.5,
+    "direction": "higher_is_riskier",
+    "ks": 0.0,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "refund_rate": {
+    "auc": 0.7604166666666666,
+    "direction": "higher_is_riskier",
+    "ks": 0.45833333333333337,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "refund_rate_change_30v30": {
+    "auc": 0.6875,
+    "direction": "lower_is_riskier",
+    "ks": 0.45833333333333337,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "repeat_customer_share": {
+    "auc": 0.5416666666666667,
+    "direction": "lower_is_riskier",
+    "ks": 0.25,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "revenue_break_26w": {
+    "auc": 0.6458333333333334,
+    "direction": "higher_is_riskier",
+    "ks": 0.2916666666666667,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "revenue_growth_30v30": {
+    "auc": 0.6145833333333334,
+    "direction": "higher_is_riskier",
+    "ks": 0.41666666666666663,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "revenue_slope_13w": {
+    "auc": 0.7604166666666666,
+    "direction": "higher_is_riskier",
+    "ks": 0.5416666666666666,
+    "n": 20,
+    "none_share": 0.0
+   },
+   "revenue_yoy_90d": {
+    "auc": 0.5729166666666666,
+    "direction": "higher_is_riskier",
+    "ks": 0.375,
+    "n": 20,
+    "none_share": 0.0
+   }
+  },
+  "plants": {
+   "by_plant": {
+    "hidden_reserve": {
+     "catch_rate": 1.0,
+     "caught": 4,
+     "planted": 4
+    },
+    "partial_coverage": {
+     "catch_rate": 1.0,
+     "caught": 1,
+     "planted": 1
+    },
+    "phantom_payouts": {
+     "catch_rate": 1.0,
+     "caught": 1,
+     "planted": 1
+    },
+    "self_transfer_revenue": {
+     "catch_rate": 1.0,
+     "caught": 2,
+     "planted": 2
+    },
+    "undisclosed_lender_debit": {
+     "catch_rate": 1.0,
+     "caught": 5,
+     "planted": 5
+    }
+   },
+   "catch_rate": 1.0,
+   "caught": 13,
+   "misses": [],
+   "planted": 13
+  },
+  "replay": {
+   "loans": 20,
+   "matched": 20,
+   "mismatches": []
+  },
+  "time_leak": {
+   "hidden_rows": 16348,
+   "loans": 20,
+   "loans_with_hidden_rows": 20,
+   "violations": 0,
+   "visible_rows": 688636
+  }
+ },
+ "synthetic": true
+}
