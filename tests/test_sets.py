@@ -57,6 +57,7 @@ def test_policies_pin_the_matching_check_sets():
     from tangible.policy import load_policy
 
     root = Path(__file__).parent.parent / "policies"
-    assert load_policy(root / "default.yaml").parsed.check_set == "cs-5"  # type: ignore[union-attr]
+    assert load_policy(root / "default.yaml").parsed.check_set == "cs-6"  # type: ignore[union-attr]
+    assert load_policy(root / "default-0.4.0.yaml").parsed.check_set == "cs-5"  # type: ignore[union-attr]
     assert load_policy(root / "default-0.3.0.yaml").parsed.check_set == "cs-4"  # type: ignore[union-attr]
     assert load_policy(root / "default-0.2.2.yaml").parsed.check_set == "cs-3"  # type: ignore[union-attr]

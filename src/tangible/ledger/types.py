@@ -154,6 +154,38 @@ class Application:
     state: str | None = None
     naics: str | None = None
     requested_amount: Decimal | None = None
+    # v3: stated imports (systemic-risk plan). None = not stated; () = stated "no imports".
+    import_mix: "tuple[ImportLine, ...] | None" = None
+
+
+@dataclass(frozen=True)
+class ImportLine:
+    """One line of the applicant's stated import mix: goods of an HS chapter from a country, as a
+    share of cost of goods sold. Self-reported (soft) in v1."""
+
+    hs_chapter: str  # two digits, e.g. "94"
+    country: str  # ISO 3166-1 alpha-2 of the goods' origin, e.g. "CN"
+    share_of_cogs: Decimal  # 0..1
+
+
+@dataclass(frozen=True)
+class MacroSignal:
+    """A dated public fact about the world (v1: a tariff action), global to every borrower.
+
+    Loaded only by the trusted loader. observed_at is when the fact became public (publication
+    date), never its effective date (occurred_at). `payload_json` is canonical JSON of the parsed
+    notice; it is external data: metrics read only codes, rates and dates from it.
+    """
+
+    source: str
+    source_ref: str
+    kind: str  # tariff_action
+    payload_json: str
+    observed_at: datetime
+    occurred_at: datetime | None = None
+    url: str | None = None
+    sha256: str | None = None
+    evidence: EvidenceRef | None = None
 
 
 SignalSource = Literal["google_places", "yelp", "rdap"]
@@ -229,6 +261,11 @@ def _known_signals(rows: Iterable[PublicSignal], as_of: datetime) -> tuple[Publi
     return tuple(sorted(known, key=lambda r: (r.observed_at, r.source, r.source_ref)))
 
 
+def _known_macro(rows: Iterable[MacroSignal], as_of: datetime) -> tuple[MacroSignal, ...]:
+    known = known_as_of(rows, as_of, key=lambda r: f"{r.source}\x00{r.source_ref}")
+    return tuple(sorted(known, key=lambda r: (r.observed_at, r.source, r.source_ref)))
+
+
 @dataclass(frozen=True)
 class Ledger:
     """A borrower's ledger rows. Metrics and checks take this plus an as_of."""
@@ -244,6 +281,7 @@ class Ledger:
     applications: tuple[Application, ...] = ()
     statements: tuple[Statement, ...] = ()
     public_signals: tuple[PublicSignal, ...] = ()
+    macro_signals: tuple[MacroSignal, ...] = ()  # global rows, loaded with every ledger
 
     @property
     def application(self) -> Application | None:
@@ -271,4 +309,5 @@ class Ledger:
             applications=_known(self.applications, as_of),
             statements=_known(self.statements, as_of),
             public_signals=_known_signals(self.public_signals, as_of),
+            macro_signals=_known_macro(self.macro_signals, as_of),
         )

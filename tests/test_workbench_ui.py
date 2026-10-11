@@ -18,9 +18,11 @@ from tangible.agent.tools import call_tool, open_context
 from tangible.checks.registry import FindingDraft
 from tangible.db.cases import get_case, set_case_status
 from tangible.db.findings import insert_finding
-from tangible.db.session import tenant_session
+from tangible.db.macro import insert_macro_signal
+from tangible.db.session import admin_connect, tenant_session
 from tangible.db.signals import insert_application
 from tangible.demo.us_intangibles import BY_KEY
+from tangible.ledger.types import Application, ImportLine
 from tangible.policy import load_policy
 from tangible.web.signals import demo_signal_provider
 from tangible.workbench.app import create_app
@@ -564,3 +566,24 @@ def test_case_page_lists_public_signals_with_match_scores(stack: Stack, tmp_path
     assert "Public signals" in page and "1.0000" in page and "0.4000" in page
     assert '<span class="sev info">recorded</span>' in page
     assert '<span class="sev hold">refused: below 0.9</span>' in page
+
+
+def test_systemic_exposure_on_the_case_page_and_the_book(stack: Stack) -> None:  # noqa: F811
+    case_id = make_case(stack)
+    with tenant_session(stack.w.url, stack.w.tenant) as conn:
+        case = get_case(conn, case_id)
+        mix = (ImportLine("85", "CN", Decimal("0.7")),)
+        insert_application(conn, case.tenant_id, case.borrower_id, Application(
+            "app", None, (), (), case.as_of - timedelta(days=1), import_mix=mix))  # fmt: skip
+    with admin_connect(stack.w.url) as admin:
+        insert_macro_signal(
+            admin, source="federal_register", source_ref="TEST-0001", kind="tariff_action",
+            payload={"document_number": "TEST-0001", "title": "Test action on HS 85",
+                     "publication_date": "x", "effective_on": "y", "hs_chapters": ["85"],
+                     "countries": ["CN"], "additional_duty": "0.25"},
+            observed_at=case.as_of - timedelta(days=5), occurred_at=case.as_of + timedelta(days=20),
+        )  # fmt: skip
+    page = ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
+    assert "Systemic exposure" in page and "+25%" in page and "TEST-0001" in page
+    home = ui(stack, "GET", "/", "ana", 200).text
+    assert "Book exposure to tariff actions" in home and "TEST-0001" in home

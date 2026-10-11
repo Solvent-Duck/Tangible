@@ -32,7 +32,7 @@ from tangible.agent.tools import ToolContext, call_tool, open_context
 from tangible.db.cases import Case
 from tangible.db.session import Conn
 from tangible.db.signals import insert_application
-from tangible.ledger.types import Application
+from tangible.ledger.types import Application, ImportLine
 from tangible.policy import Policy
 from tangible.web.signals import PLACE_SOURCES, demo_signal_provider
 
@@ -50,6 +50,8 @@ class UsBorrower:
     naics: str
     requested_amount: Decimal
     owner_names: tuple[str, ...]
+    # Stated imports (application v3, systemic-risk plan): None = not stated, () = none.
+    import_mix: tuple[ImportLine, ...] | None = None
 
     @property
     def domain(self) -> str:
@@ -70,6 +72,7 @@ class UsBorrower:
             state=self.state,
             naics=self.naics,
             requested_amount=self.requested_amount,
+            import_mix=self.import_mix,
         )
 
 
@@ -78,6 +81,7 @@ US_BORROWERS: tuple[UsBorrower, ...] = (
         "juniper_rye", "loyalty", "Juniper & Rye Bakery LLC", "Juniper & Rye",
         "2231 SE Division St, Portland", "OR", "(503) 555-0142", "https://juniperandrye.example",
         "311811", Decimal("60000"), ("Maya Lindqvist",),
+        import_mix=(),  # a bakery buying local flour: states no imports
     ),
     UsBorrower(
         "copperline", "stock", "Copperline Hardware Supply Inc", None,
@@ -88,6 +92,8 @@ US_BORROWERS: tuple[UsBorrower, ...] = (
         "northgate", "bought_reviews", "Northgate Phone Repair LLC", None,
         "4410 E Speedway Blvd, Tucson", "AZ", "(520) 555-0178",
         "https://northgatephonerepair.example", "811210", Decimal("40000"), ("Rico Valdez",),
+        # Screens, batteries and parts from China: exposed to the demo tariff on HS 85.
+        import_mix=(ImportLine("85", "CN", Decimal("0.7")),),
     ),
 )  # fmt: skip
 

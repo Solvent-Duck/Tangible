@@ -22,6 +22,59 @@ impact, a probability or a number. Every external fact is a stored, dated row. E
 number comes from a versioned pure function, and every limit change is a policy rule that records
 the values it saw.
 
+## v1 slice (hackathon), as built
+
+Built on fixtures, US only:
+
+- **Data.** Migration `0010_macro_signals.sql` adds a global `macro_signal` table: no tenant_id,
+  append-only, readable by the app role, writable only by the owning role through
+  `tangible-macro load`. It also adds `application.import_mix`, the stated imports as
+  `{hs_chapter, country, share_of_cogs}` lines. Every ledger carries the macro rows, and
+  `known_as_of` filters them by **publication** date. The rows are part of the ledger input hash.
+- **Fixtures.** `src/tangible/macro/fixtures/demo_tariff_actions.json` holds two **fictional**
+  notices in Federal Register shape, each titled "[Demo fixture, fictional]":
+  - DEMO-2025-0007: +10% on HS 94 from CN, in effect since 2025, so already reflected in the margin.
+  - DEMO-2026-0001: +25% on HS 82, 85 and 94 from CN, effective 2026-11-01.
+- **Metrics `ms-4`:**
+  - `import_share`
+  - `tariff_rate_change`: only actions taking effect in (as_of − 90 days, as_of + 180 days]
+  - `tariff_margin_shock`
+  - `stock_buffer_months`
+  - `stressed_margin`
+  - `stressed_flow_margin`: added during the build, see below
+  - `stressed_runway`: capped at 24 months
+- **Checks `cs-6`:** `tariff_exposure` (review) and `import_share_unstated` (info).
+- **Policy 0.5.0** (`default-0.4.0.yaml` is kept for replay). There are three stress rules; the
+  first match wins:
+  - runway ≤ 3 months → limit ×0.5
+  - runway ≤ 6 months → limit ×0.75
+  - the tariff turns monthly cash flow negative (`stressed_flow_margin ≤ 0` and
+    `tariff_margin_shock ≥ 0.02`) → limit ×0.75
+
+  The floor is 0.5, and the band never changes.
+- **Workbench.** A "Systemic exposure" panel on the case page (stated imports, the new duty per
+  line, the actions that count) and a "Book exposure to tariff actions" card on the cases list.
+- **Demo.** The seed loads the fictional actions.
+  - Northgate Phone Repair states 70% of COGS in HS 85 from CN. The tariff takes about 10% of its
+    revenue and turns its monthly cash flow from about +8% of revenue to about −1.8%, so its
+    limit is cut ×0.75 (114,182.91 → 85,637.18).
+  - Juniper & Rye states no imports.
+  - The UK borrowers state no mix, so their stress is not evaluated.
+
+**Changes from the plan:**
+- **The product-to-HS mapping table was not built.** The ledger carries SKU codes but no product
+  descriptions, so v1 takes HS chapters from the stated import mix instead. `hs_mapping` and its
+  confirm/reject actions are deferred.
+- **`stressed_flow_margin` was added.** The synthetic demo borrowers all generate cash, so a
+  runway-only rule never fires on them. "The tariff turns cash flow negative" is also a better
+  test of debt-service capacity for a cash-flow lender.
+- **There is no `macro_agent` yet.** Macro data is loaded by the trusted loader. Agents can read
+  the effect through the metrics but cannot write macro rows.
+- **Supply-pressure series (GSCPI) and the backtest wiring are not built.**
+- **Replay caveat:** an assessment frozen before a macro row was loaded with an earlier
+  publication date will not replay to the same input hash. Keying on `loaded_at` (ALFRED-style
+  vintages) is a v2 item.
+
 ## Exposure has two halves
 
 | Half | What | Where it comes from |

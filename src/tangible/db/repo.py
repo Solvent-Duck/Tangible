@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Literal, cast
 
+from tangible.db.macro import load_macro_signals
 from tangible.db.session import Conn
 from tangible.db.signals import load_applications, load_public_signals
 from tangible.ledger.evidence import EvidenceRef
@@ -99,6 +100,7 @@ def load_ledger(conn: Conn, borrower_id: str) -> Ledger:
         inventory_snapshots=stock, account_balances=balances, connections=conns,
         applications=load_applications(conn, b), statements=statements,
         public_signals=load_public_signals(conn, b),
+        macro_signals=load_macro_signals(conn),
     )  # fmt: skip
 
 

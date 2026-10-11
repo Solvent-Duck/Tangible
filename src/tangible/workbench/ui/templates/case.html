@@ -89,6 +89,35 @@
 </section>
 {% endif %}
 
+{% if is_analyst and c.systemic and (c.systemic.lines or c.systemic.actions or not c.systemic.stated) %}
+<section class="card" aria-labelledby="sx-h">
+  <div class="card-head">
+    <h2 id="sx-h">Systemic exposure</h2>
+    <span class="help">Enacted or announced tariff actions known at the case date, against the stated import mix</span>
+  </div>
+  <div class="card-body">
+  {% if not c.systemic.stated %}
+    <p class="mb-0">The application states no import mix, so tariff exposure is <strong>not evaluated</strong>; the stressed limit leaves the limit unchanged.</p>
+  {% elif not c.systemic.lines %}
+    <p class="mb-0">The applicant states no imported goods.</p>
+  {% else %}
+  <table class="table"><caption class="sr">Stated imports and new duties</caption>
+  <thead><tr><th scope="col">Goods (HS chapter)</th><th scope="col">From</th><th scope="col" class="num">Share of cost of goods</th><th scope="col" class="num">New duty</th></tr></thead>
+  <tbody>
+  {% for l in c.systemic.lines %}
+  <tr><td>{{ l.hs_chapter }}</td><td>{{ l.country }}</td><td class="num">{{ '%.0f' | format(l.share | float * 100) }}%</td>
+    <td class="num">{% if l.added_duty | float > 0 %}<span class="sev review">+{{ '%.0f' | format(l.added_duty | float * 100) }}%</span><br><span class="help">{{ l.actions | join(', ') }}</span>{% else %}none{% endif %}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% endif %}
+  {% for a in c.systemic.actions %}
+  <p class="help mb-0 mt-2"><strong>{{ a.document_number }}</strong>: {{ a.title }}. Published {{ a.publication_date }}, effective {{ a.effective_on }}; +{{ '%.0f' | format(a.additional_duty | float * 100) }}% on HS {{ a.hs_chapters | join(', ') }} from {{ a.countries | join(', ') }}.</p>
+  {% endfor %}
+  <p class="help mb-0 mt-2">The stress assumes none of the duty is passed on. The metrics below (new tariff, margin and cash flow after it) feed the stressed limit; the band is never changed by it.</p>
+  </div>
+</section>
+{% endif %}
+
 <section class="card" aria-labelledby="m-h">
   <div class="card-head">
     <h2 id="m-h">Baseline metrics {% if metrics %}<span class="count">{{ metrics | length }}</span>{% endif %}</h2>

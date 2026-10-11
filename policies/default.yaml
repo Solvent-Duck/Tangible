@@ -1,9 +1,9 @@
 # Default policy. Each lender gets its own copy; the lender's credit team owns it.
-# Steps run in order: knockout -> bands -> uplift -> review cap -> limit. Thresholds are starting
-# guesses; tune on the backtest. max/min are inclusive.
-version: "0.4.0"
-metric_set: ms-3
-check_set: cs-5
+# Steps run in order: knockout -> bands -> uplift -> review cap -> limit -> stress. Thresholds are
+# starting guesses; tune on the backtest. max/min are inclusive.
+version: "0.5.0"
+metric_set: ms-4
+check_set: cs-6
 
 knockout:
   # A hold finding in these review states blocks a decision.
@@ -56,3 +56,20 @@ limit:
     metric: history_days
     min_days: 183
     short_history_share_factor: 0.5
+
+stress:
+  # (0.5.0) Systemic exposure (docs/systemic-risk-plan.md). After the limit, the first rule whose
+  # conditions hold reduces the LIMIT, never the band: a tariff changes how much to put at risk,
+  # not how well the business is run. stressed_runway is months of cash if the borrower absorbs
+  # every enacted or announced tariff on its stated imports (capped at 24). A missing input (no
+  # import mix stated) is not evaluated and leaves the limit unchanged; cs-6 flags it as info.
+  floor: 0.5
+  rules:
+    - when: { stressed_runway: { max: 3 } }
+      limit_factor: 0.5
+    - when: { stressed_runway: { max: 6 } }
+      limit_factor: 0.75
+    # The tariff itself turns monthly cash flow negative: the cash the loan is repaid from goes.
+    # (tariff_margin_shock >= 0.02 keeps this to businesses the tariff actually hits.)
+    - when: { stressed_flow_margin: { max: 0 }, tariff_margin_shock: { min: 0.02 } }
+      limit_factor: 0.75

@@ -219,6 +219,13 @@ METRIC_LABELS: dict[str, str] = {
     "stock_value_at_cost": "Stock value at cost",
     "stock_cover": "Stock cover of requested amount",
     "entity_match_ok": "All public signals matched",
+    "import_share": "Imported share of cost of goods (stated)",
+    "tariff_rate_change": "New tariff on imports (weighted)",
+    "tariff_margin_shock": "Revenue lost to new tariffs (none passed on)",
+    "stock_buffer_months": "Months of stock bought at the old price",
+    "stressed_margin": "Gross margin after new tariffs",
+    "stressed_flow_margin": "Monthly cash flow after new tariffs (share of revenue)",
+    "stressed_runway": "Months of cash after new tariffs (max 24)",
 }
 
 

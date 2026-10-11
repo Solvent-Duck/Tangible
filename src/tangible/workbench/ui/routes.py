@@ -428,7 +428,8 @@ def dev_logout(request: Request) -> Response:
 def home(request: Request, conn: UiConn, p: UiPrincipal) -> Response:
     cases = services.list_cases(conn, p)
     signed = queries.assessment_by_case(conn, [c["id"] for c in cases])
-    return render(request, "cases.html", p, cases=cases, signed=signed)
+    book = services.book_exposure(conn, cases)
+    return render(request, "cases.html", p, cases=cases, signed=signed, book=book)
 
 
 @router.get("/cases/new", response_class=HTMLResponse)

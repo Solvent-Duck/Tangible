@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from tangible.db.session import Conn
 from tangible.ledger.evidence import EvidenceRef
-from tangible.ledger.types import Application, PublicSignal
+from tangible.ledger.types import Application, ImportLine, PublicSignal
 
 # entity_match v1: a match at or above this score needs no analyst confirmation.
 MATCH_THRESHOLD = Decimal("0.9")
@@ -25,14 +25,15 @@ def insert_application(conn: Conn, tenant_id: str, borrower_id: str, app: Applic
     row = conn.execute(
         "INSERT INTO application (tenant_id, borrower_id, source_ref, stated_revenue_90d, "
         "own_account_names, owner_names, legal_name, dba, address, phone, website, state, naics, "
-        "requested_amount, observed_at, evidence_pull_id, evidence_locator) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        "requested_amount, observed_at, evidence_pull_id, evidence_locator, import_mix) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb) "
+        "RETURNING id",
         (
             tenant_id, borrower_id, app.source_ref, app.stated_revenue_90d,
             list(app.own_account_names), list(app.owner_names), app.legal_name, app.dba,
             app.address, app.phone, app.website, app.state, app.naics, app.requested_amount,
             app.observed_at, app.evidence.pull_id if app.evidence else None,
-            app.evidence.locator if app.evidence else None,
+            app.evidence.locator if app.evidence else None, _import_mix_json(app),
         ),
     ).fetchone()  # fmt: skip
     assert row
@@ -43,7 +44,7 @@ def load_applications(conn: Conn, borrower_id: str) -> tuple[Application, ...]:
     rows = conn.execute(
         "SELECT source_ref, stated_revenue_90d, own_account_names, owner_names, observed_at, "
         "evidence_pull_id, evidence_locator, legal_name, dba, address, phone, website, state, "
-        "naics, requested_amount FROM application WHERE borrower_id = %s "
+        "naics, requested_amount, import_mix FROM application WHERE borrower_id = %s "
         "ORDER BY observed_at, source_ref, id",
         (borrower_id,),
     ).fetchall()
@@ -63,8 +64,33 @@ def load_applications(conn: Conn, borrower_id: str) -> tuple[Application, ...]:
             r[12],
             r[13],
             r[14],
+            _import_mix(r[15]),
         )  # fmt: skip
         for r in rows
+    )
+
+
+def _import_mix_json(app: Application) -> str | None:
+    if app.import_mix is None:
+        return None
+    return json.dumps(
+        [
+            {
+                "hs_chapter": x.hs_chapter,
+                "country": x.country,
+                "share_of_cogs": str(x.share_of_cogs),
+            }
+            for x in app.import_mix
+        ]
+    )
+
+
+def _import_mix(raw: Any) -> tuple[ImportLine, ...] | None:
+    if raw is None:
+        return None
+    return tuple(
+        ImportLine(str(x["hs_chapter"]), str(x["country"]), Decimal(str(x["share_of_cogs"])))
+        for x in raw
     )
 
 

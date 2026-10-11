@@ -448,7 +448,8 @@ def test_record_finding_feedback_names_unmatched_numbers(hw: World, tmp_path: Pa
         res = run(conn, case, client, tmp_path)
         bad = tool_output_texts(client.calls[2])[-1]
         assert "recorded; UNVERIFIED: numbers not found in cited results:" in bad
-        assert "99,999.99" in bad and "53" in bad and "41" not in bad.split("results:")[1]
+        listed = bad.split("results:")[1].split(". This finding")[0]  # not the uuids after it
+        assert "99,999.99" in listed and "53" in listed and "41" not in listed
         good = tool_output_texts(client.calls[4])[-1]
         assert "recorded; verified" in good and "UNVERIFIED" not in good
         # Feedback is display only: both findings are stored as before, and the logged result

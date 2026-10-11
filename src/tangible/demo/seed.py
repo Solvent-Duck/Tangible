@@ -46,6 +46,7 @@ from tangible.evidence.store import LocalEvidenceStore
 from tangible.ingest.synthetic_dir import ingest_synthetic_dir
 from tangible.ledger.csv_dir import read_ledger_dir
 from tangible.ledger.types import Ledger
+from tangible.macro import load_tariff_actions
 from tangible.policy import Policy, load_policy
 from tangible.workbench import services
 from tangible.workbench.auth import Principal, lookup_principal
@@ -281,7 +282,7 @@ SPECS: Final[tuple[BorrowerSpec, ...]] = (
             account_ref="US-NPR-001",
             processor_name="SQUARE PAYMENTS",
             processor_source="square",
-            owner_account="DIEGO SALAZAR PERSONAL",
+            owner_account="RICO VALDEZ PERSONAL",
             lender_name="SONORAN LENDING",
             bank_name="SAGUARO STATE BANK",
             landlord="ORACLE ROAD PLAZA LLC",
@@ -611,6 +612,10 @@ def seed_demo(
 
     # 2. tenant, users, borrowers (ingested), baseline checks on each story
     tenant_id = _create_tenant(url, tenant_name)
+    with admin_connect(url) as admin:
+        # Global and idempotent: the fictional demo tariff actions (docs/systemic-risk-plan.md).
+        if n := load_tariff_actions(admin):
+            log(f"loaded {n} demo tariff action(s) (fictional)")
     evidence = LocalEvidenceStore(store)
     with tenant_session(url, tenant_id) as conn:
         _create_users(conn, tenant_id)

@@ -14,7 +14,7 @@ from typing import Any, Literal
 from tangible.checks.registry import Severity
 from tangible.policy.loader import Policy
 from tangible.policy.review import ReviewState
-from tangible.policy.schema import BAND_ORDER, PolicySpec, Uplift
+from tangible.policy.schema import BAND_ORDER, PolicySpec, Stress, Uplift
 
 _CENT = Decimal("0.01")
 
@@ -366,4 +366,66 @@ def evaluate(
             "outcome": "capped_at_max" if raw > cap_amt else "computed",
         }
     )
+
+    # 5. stressed limit (0.5.0+): may only reduce the limit; never touches the band.
+    if spec.stress is not None:
+        limit = _stress(spec.stress, limit, metrics, rules)
     return done(band, limit)
+
+
+def _stress(
+    stress: Stress,
+    limit: Decimal,
+    metrics: Mapping[str, Decimal | None],
+    rules: list[dict[str, str]],
+) -> Decimal:
+    for i, r in enumerate(stress.rules):
+        saw, missing, ok = [], [], True
+        for c in r.when:
+            value = metrics.get(c.metric)
+            for op, thr in (("<=", c.max), (">=", c.min)):
+                if thr is None:
+                    continue
+                if value is None:
+                    missing.append(c.metric)
+                    ok = False
+                    continue
+                holds = value <= thr if op == "<=" else value >= thr
+                ok = ok and holds
+                saw.append(f"{c.metric} {value} {op if holds else _FAILED_OP[op]} {thr}")
+        if missing:
+            rules.append(
+                {
+                    "rule": f"stress rule {i + 1}: not evaluated, missing {', '.join(missing)}",
+                    "step": "stress", "saw": "none", "op": "all",
+                    "threshold": f"x{r.limit_factor}",
+                    "outcome": "not_evaluated", "status": "not_evaluated",
+                }
+            )  # fmt: skip
+            continue
+        if ok:
+            factor = max(r.limit_factor, stress.floor)
+            stressed = (limit * factor).quantize(_CENT, rounding=ROUND_HALF_UP)
+            rules.append(
+                {
+                    "rule": f"stressed limit {limit}\u2192{stressed} (x{factor}): {'; '.join(saw)}",
+                    "step": "stress", "saw": "; ".join(saw), "op": "x",
+                    "threshold": str(factor), "outcome": "reduced",
+                }
+            )  # fmt: skip
+            return stressed
+        rules.append(
+            {
+                "rule": f"stress rule {i + 1}: {'; '.join(saw)}",
+                "step": "stress", "saw": "; ".join(saw), "op": "all",
+                "threshold": f"x{r.limit_factor}", "outcome": "fail",
+            }
+        )  # fmt: skip
+    rules.append(
+        {
+            "rule": "stress: no rule fired; limit unchanged",
+            "step": "stress", "saw": str(limit), "op": "x", "threshold": "1",
+            "outcome": "unchanged",
+        }
+    )  # fmt: skip
+    return limit

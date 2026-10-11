@@ -79,6 +79,22 @@ class Uplift:
 
 
 @dataclass(frozen=True)
+class StressRule:
+    when: tuple[Condition, ...]
+    limit_factor: Decimal
+
+
+@dataclass(frozen=True)
+class Stress:
+    """Optional (0.5.0+). After the limit, the first rule whose conditions all hold multiplies the
+    limit by its `limit_factor` (never below `floor`, never above 1). It never changes the band. A
+    rule with a missing metric is not evaluated and does not fire."""
+
+    floor: Decimal
+    rules: tuple[StressRule, ...]
+
+
+@dataclass(frozen=True)
 class PolicySpec:
     version: str
     metric_set: str
@@ -88,6 +104,7 @@ class PolicySpec:
     review_findings: ReviewCap
     limit: LimitRule
     uplift: Uplift | None = None  # absent in 0.2.x / 0.3.0 files
+    stress: Stress | None = None  # absent before 0.5.0
 
 
 def _mapping(
@@ -198,13 +215,36 @@ def _uplift(v: Any) -> Uplift:
     return Uplift(notches, ceiling, requires, requires_for, tuple(routes))
 
 
+def _stress(v: Any) -> Stress:
+    path = "policy.stress"
+    m = _mapping(v, path, {"floor", "rules"})
+    floor = _num(m["floor"], f"{path}.floor")
+    if not Decimal(0) < floor <= Decimal(1):
+        raise ValueError(f"{path}.floor: must be in (0, 1]")
+    raw = m["rules"]
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{path}.rules: expected a non-empty list")
+    rules = []
+    for i, r in enumerate(raw):
+        p = f"{path}.rules[{i}]"
+        body = _mapping(r, p, {"when", "limit_factor"})
+        when = _conditions(body["when"], f"{p}.when")
+        if not when:
+            raise ValueError(f"{p}.when: needs at least one metric condition")
+        factor = _num(body["limit_factor"], f"{p}.limit_factor")
+        if not floor <= factor < Decimal(1):
+            raise ValueError(f"{p}.limit_factor: must be in [floor, 1): it only ever reduces")
+        rules.append(StressRule(when, factor))
+    return Stress(floor, tuple(rules))
+
+
 def parse_policy(spec: Any) -> PolicySpec:
     top = _mapping(
         spec,
         "policy",
         {
             "version", "metric_set", "check_set", "knockout", "bands", "review_findings",
-            "limit", "uplift",
+            "limit", "uplift", "stress",
         },
         {"version", "metric_set", "check_set", "knockout", "bands", "review_findings", "limit"},
     )  # fmt: skip
@@ -283,4 +323,5 @@ def parse_policy(spec: Any) -> PolicySpec:
         review_findings=cap,
         limit=limit,
         uplift=_uplift(top["uplift"]) if "uplift" in top else None,
+        stress=_stress(top["stress"]) if "stress" in top else None,
     )

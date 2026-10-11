@@ -41,6 +41,13 @@ CHECK_SETS["cs-5"] = (
     ("listing_identity_mismatch", 1),
 )
 
+# cs-6: cs-5 plus the systemic exposure checks (docs/systemic-risk-plan.md, hackathon slice).
+CHECK_SETS["cs-6"] = (
+    *CHECK_SETS["cs-5"],
+    ("tariff_exposure", 1),
+    ("import_share_unstated", 1),
+)
+
 
 def check_set(set_id: str) -> tuple[tuple[str, int], ...]:
     members = CHECK_SETS[set_id]

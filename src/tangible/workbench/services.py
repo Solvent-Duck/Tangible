@@ -35,13 +35,17 @@ from tangible.assessment import freeze, record_override, replay
 from tangible.assessment.freeze import review_states
 from tangible.db.cases import Case, create_case, get_case, set_case_status
 from tangible.db.findings import replaced_by
+from tangible.db.macro import load_macro_signals
 from tangible.db.session import Conn, tenant_session
+from tangible.db.signals import load_applications
 from tangible.documents.pending import ReadOutcome, pending_pulls, read_pending, source_ref_for
 from tangible.documents.upload import SOURCE as UPLOAD_SOURCE
 from tangible.documents.upload import display_name, store_upload
 from tangible.evidence import resolve as evidence_resolve
 from tangible.evidence.store import LocalEvidenceStore
 from tangible.ledger.evidence import EvidenceRef
+from tangible.ledger.types import Ledger, MacroSignal
+from tangible.metrics.systemic import actions_in_window, added_duty
 from tangible.policy import load_policy
 from tangible.web.provider import WebProvider
 from tangible.web.signals import signal_provider_from_env
@@ -444,6 +448,7 @@ def get_case_detail(
         ).fetchone()
         out["last_investigation"] = _j({**stop[0], "at": stop[1]}) if stop else None
         out["intangibles"] = _intangibles(conn, case.id)
+        out["systemic"] = systemic_exposure(conn, case)
         out.update(_run_notices(conn, case))
     audit.record(conn, p, "view", "case", case.id)
     return out
@@ -480,6 +485,64 @@ def _intangibles(conn: Conn, case_id: str) -> list[dict[str, Any]]:
                 }
             )
         )
+    return out
+
+
+def _light_ledger(conn: Conn, borrower_id: str, macro: tuple[MacroSignal, ...]) -> Ledger:
+    """Only what the systemic view reads: the application and the global macro rows."""
+    return Ledger(applications=load_applications(conn, borrower_id), macro_signals=macro)
+
+
+def systemic_exposure(conn: Conn, case: Case) -> dict[str, Any]:
+    """Stated imports, the tariff actions that count at the case date and what each line pays.
+    Computed by the same pure functions as the ms-4 metrics; display only."""
+    led = _light_ledger(conn, case.borrower_id, load_macro_signals(conn))
+    k = led.known(case.as_of)
+    mix = k.application.import_mix if k.application else None
+    lines = []
+    for x in mix or ():
+        rate, refs = added_duty(k, case.as_of, x)
+        lines.append({"hs_chapter": x.hs_chapter, "country": x.country,
+                      "share": x.share_of_cogs, "added_duty": rate, "actions": refs})  # fmt: skip
+    actions = [
+        {k2: a.get(k2) for k2 in ("document_number", "title", "publication_date", "effective_on",
+                                  "hs_chapters", "countries", "additional_duty")}
+        for a in actions_in_window(k, case.as_of)
+    ]  # fmt: skip
+    out: dict[str, Any] = _j({"stated": mix is not None, "lines": lines, "actions": actions})
+    return out
+
+
+def book_exposure(conn: Conn, cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """For each tariff action counting at some case's date: how many of these cases' borrowers
+    state imports it covers, and their share of the requested amounts. Display only."""
+    macro = load_macro_signals(conn)
+    if not macro or not cases:
+        return []
+    rows = conn.execute(
+        "SELECT id, borrower_id, as_of, loan_amount FROM case_file WHERE id = ANY(%s::uuid[]) "
+        "AND status <> 'closed'",
+        ([c["id"] for c in cases],),
+    ).fetchall()
+    total = sum((r[3] or Decimal(0) for r in rows), Decimal(0))
+    by_action: dict[str, dict[str, Any]] = {}
+    for case_id, borrower_id, as_of, amount in rows:
+        k = _light_ledger(conn, str(borrower_id), macro).known(as_of)
+        for a in actions_in_window(k, as_of):
+            ref = str(a["_ref"])
+            e = by_action.setdefault(
+                ref, {"document_number": ref, "title": a.get("title"),
+                      "effective_on": a.get("effective_on"), "cases": [], "amount": Decimal(0)},
+            )  # fmt: skip
+            mix = k.application.import_mix if k.application else None
+            if any(added_duty(k, as_of, x)[0] > 0 and ref in added_duty(k, as_of, x)[1]
+                   for x in mix or ()):  # fmt: skip
+                e["cases"].append(str(case_id))
+                e["amount"] += amount or Decimal(0)
+    out = []
+    for e in sorted(by_action.values(), key=lambda e: -e["amount"]):
+        share = (e["amount"] / total) if total else None
+        out.append(_j(e | {"n": len(e["cases"]), "share": share, "total": total}))
     return out
 
 

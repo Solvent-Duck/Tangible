@@ -43,4 +43,26 @@
 <div class="empty">{{ icon('inbox') }}<strong>No cases</strong><span>{% if p.role == 'credit_admin' %}Create one to get started.{% elif p.role == 'analyst' %}Cases assigned to you will appear here.{% else %}Signed cases will appear here.{% endif %}</span></div>
 {% endif %}
 </div>
+
+{% if book %}
+<section class="card mt-3" aria-labelledby="book-h">
+  <div class="card-head">
+    <h2 id="book-h">Book exposure to tariff actions</h2>
+    <span class="help">Borrowers whose stated imports a tariff action covers, at each case's date</span>
+  </div>
+  <table class="table"><caption class="sr">Tariff actions and the cases they touch</caption>
+  <thead><tr><th scope="col">Action</th><th scope="col" class="hide-sm">Effective</th><th scope="col" class="num">Borrowers</th><th scope="col" class="num">Share of requested</th></tr></thead>
+  <tbody>
+  {% for a in book %}
+  <tr>
+    <td><strong>{{ a.document_number }}</strong><br><span class="help">{{ a.title }}</span></td>
+    <td class="hide-sm">{{ a.effective_on }}</td>
+    <td class="num">{{ a.n }}</td>
+    <td class="num">{% if a.share is not none %}{{ '%.0f' | format(a.share | float * 100) }}%{% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody></table>
+  <p class="help card-body mb-0">Only enacted or announced actions count, by publication date; Tangible does not forecast tariffs.</p>
+</section>
+{% endif %}
 {% endblock %}

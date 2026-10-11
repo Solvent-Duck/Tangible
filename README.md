@@ -53,11 +53,15 @@ ms-3 metrics (pure, versioned) ─► policy 0.4.0: knockout → bands → uplif
 
 Env for a live run: `TANGIBLE_MODEL_BACKEND=bedrock TANGIBLE_SIGNAL_PROVIDER=fixtures` plus the Bedrock settings in the Makefile `demo` comment. One case costs about $0.80 on Claude Sonnet 4.5.
 
+## Systemic exposure (tariffs)
+
+Tangible does not forecast tariffs. It loads enacted or announced actions, dated by publication (`tangible-macro load`; the demo set is fictional), and reads each borrower's stated import mix. The ms-4 metrics then compute the margin and cash flow left after the new duty, assuming none of it is passed on. Policy 0.5.0 may only **reduce the limit**, never the band, for example "stressed limit 114,182.91→85,637.18 (x0.75): stressed_flow_margin −0.018 ≤ 0". The cases list shows how much of the book each action touches. Plan and v1 notes: [docs/systemic-risk-plan.md](docs/systemic-risk-plan.md).
+
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `src/tangible/db/` | Plain SQL migrations 0001–0009 (schema, RLS, immutability triggers), tenant sessions, repositories. Applied by `tangible-migrate`. |
+| `src/tangible/db/` | Plain SQL migrations 0001–0010 (schema, RLS, immutability triggers), tenant sessions, repositories. Applied by `tangible-migrate`. |
 | `src/tangible/ledger/` | Ledger row types and `known_as_of`, the single place the `observed_at` time rule lives. |
 | `src/tangible/ingest/`, `src/tangible/datasets/` | Load data into the ledger (`tangible-ingest`); UCI Online Retail loader and a synthetic generator with planted problems. |
 | `src/tangible/metrics/` | 23 versioned pure metrics (health and momentum), pinned as set `ms-2`. |
@@ -72,7 +76,7 @@ Env for a live run: `TANGIBLE_MODEL_BACKEND=bedrock TANGIBLE_SIGNAL_PROVIDER=fix
 | `src/tangible/backtest/` | Runs a cohort as of each loan's decision date and reports loss by band, metric discrimination, finding lift, plants caught, replay matches and agent spread (`tangible-backtest`). |
 | `src/tangible/workbench/` | Analyst workbench: FastAPI API and Jinja2/htmx UI with OIDC login (`tangible-workbench`). |
 | `src/tangible/demo/` | Demo tenant seed (`tangible-demo seed`, `make demo`) and statement PDFs from a borrower's ledger (`tangible-demo statements`). |
-| `policies/default.yaml` | Default lender policy 0.3.0 (starting-guess thresholds; agent holds block only once an analyst accepts them). Older versions are kept beside it (`default-0.2.2.yaml`) so replay can use the policy an assessment was frozen under. |
+| `policies/default.yaml` | Default lender policy 0.5.0 (starting-guess thresholds; agent holds block only once an analyst accepts them; 0.4.0 added the intangibles uplift, 0.5.0 the stressed limit). Older versions are kept beside it (`default-0.2.2.yaml` … `default-0.4.0.yaml`) so replay can use the policy an assessment was frozen under. |
 
 ## Status
 
