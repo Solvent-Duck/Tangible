@@ -207,6 +207,13 @@ def test_default_specs_are_the_designed_stories() -> None:
         "Marlow Lane Interiors Ltd": "signed",
         "Brightwell Crafts Ltd": "review",
         "Oakden Trading Ltd": "review",
+        "Juniper & Rye Bakery LLC": "open",
+        "Northgate Phone Repair LLC": "open",
+    }
+    # The US intangibles borrowers carry an identity for the search team; the UK ones do not.
+    assert {s.name: s.identity for s in SPECS if s.identity} == {
+        "Juniper & Rye Bakery LLC": "juniper_rye",
+        "Northgate Phone Repair LLC": "northgate",
     }
     assert len({s.partition for s in SPECS}) == len(SPECS)  # one merchant each
     assert all(Decimal(25000) <= s.loan_amount <= Decimal(150000) for s in SPECS)
@@ -340,7 +347,9 @@ def test_default_specs_have_distinct_identities_and_the_designed_connections() -
     for field in ("account_ref", "owner_account", "lender_name", "bank_name", "landlord"):
         assert len({getattr(p, field) for p in profiles}) == len(SPECS), field
     assert len({p.supplier_names for p in profiles}) == len(SPECS)
-    assert all(p.account_ref.startswith("GB-") and p.account_ref.endswith("-001") for p in profiles)
+    assert all(
+        p.account_ref[:3] in ("GB-", "US-") and p.account_ref.endswith("-001") for p in profiles
+    )
     assert {p.processor_source for p in profiles} >= {"shopify", "stripe", "square", "sumup"}
     # No demo borrower's supplier is named like another demo borrower.
     words = {s.name.upper().split()[0] for s in SPECS}
@@ -353,6 +362,8 @@ def test_default_specs_have_distinct_identities_and_the_designed_connections() -
         "Marlow Lane Interiors Ltd": frozenset(),
         "Brightwell Crafts Ltd": {"stale_connection"},
         "Oakden Trading Ltd": {"revoked_mid_review"},
+        "Juniper & Rye Bakery LLC": frozenset(),
+        "Northgate Phone Repair LLC": frozenset(),
     }
     for s in SPECS:
         sources = {c.source for c in connections_of(s)}

@@ -890,3 +890,17 @@ def test_stage_public_signals_for_the_us_demo(
         assert ledger.application is not None and ledger.application.state == "AZ"
         assert compute("presence_channels", 1, ledger, as_of) == 3
         assert compute("entity_match_ok", 1, ledger, as_of) == 1
+
+
+@pytest.mark.db
+def test_parallel_agents_record_the_same_listing_once(ctx: ToolContext) -> None:
+    # Two search agents pull and match the same listing; only the first record sticks.
+    first = match(ctx, search(ctx).call_id, REAL)
+    second = match(ctx, search(ctx).call_id, REAL)
+    ok = call_tool(ctx, "record_signal", {"match_id": first.result["match_id"]})
+    dup = call_tool(ctx, "record_signal", {"match_id": second.result["match_id"]})
+    assert ok.error is None
+    assert dup.error and "already on file for this case" in dup.error
+    assert ctx.conn.execute(
+        "SELECT count(*) FROM public_signal WHERE case_id = %s", (ctx.case.id,)
+    ).fetchone() == (1,)

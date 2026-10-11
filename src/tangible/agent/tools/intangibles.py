@@ -252,6 +252,19 @@ def _usable_match(ctx: ToolContext, raw: str) -> MatchRow:
     ).fetchone()
     if dup is not None:
         raise ToolError(f"match {match_id} is already recorded as signal {dup[0]}")
+    # Search agents run in parallel and may pull the same listing: identical content from the
+    # same source is on file once per case (a changed listing is a new revision and is kept).
+    sha = m.candidate.get("sha256")
+    same = ctx.conn.execute(
+        "SELECT id FROM public_signal WHERE case_id = %s AND source = %s AND source_ref = %s "
+        "AND sha256 IS NOT DISTINCT FROM %s",
+        (ctx.case.id, m.source, m.source_ref, sha if isinstance(sha, str) else None),
+    ).fetchone()
+    if same is not None:
+        raise ToolError(
+            f"this {m.source} result is already on file for this case as signal {same[0]} "
+            "(same content); nothing new to record"
+        )
     return m
 
 

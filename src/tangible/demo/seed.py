@@ -39,7 +39,9 @@ from tangible.checks.sets import check_set
 from tangible.datasets.synthetic import DEFAULT_PROFILE, PLANTS, Profile, generate
 from tangible.db.repo import create_borrower, load_ledger
 from tangible.db.session import Conn, admin_connect, tenant_session
+from tangible.db.signals import insert_application
 from tangible.demo.shift import default_end_on, shift_lines
+from tangible.demo.us_intangibles import BY_KEY as US_BY_KEY
 from tangible.evidence.store import LocalEvidenceStore
 from tangible.ingest.synthetic_dir import ingest_synthetic_dir
 from tangible.ledger.csv_dir import read_ledger_dir
@@ -121,6 +123,9 @@ class BorrowerSpec:
     stage: str  # with --run-agent: "open", "review" (investigated) or "signed"
     profile: Profile = DEFAULT_PROFILE  # who the borrower is in the data
     connections: tuple[ConnectionSpec, ...] | None = None  # None: healthy processor and bank
+    # A US identity from tangible.demo.us_intangibles: its application (name, address, phone,
+    # website) is written before the case opens, so the search team has someone to look up.
+    identity: str | None = None
 
 
 def connections_of(spec: BorrowerSpec) -> tuple[ConnectionSpec, ...]:
@@ -254,6 +259,35 @@ SPECS: Final[tuple[BorrowerSpec, ...]] = (
                 revoked_ago=timedelta(days=3),
             ),
         ),
+    ),
+    # Intangibles (US, public-web fixtures in web/demo_fixtures/us). Both stay open for a live
+    # run with TANGIBLE_SIGNAL_PROVIDER=fixtures: Juniper & Rye's regulars can lift it one band
+    # by the loyalty route; Northgate shares its name with a Spokane shop the search must refuse.
+    BorrowerSpec(
+        "Juniper & Rye Bakery LLC", 0, (), 106, Decimal("60000"), "open",
+        profile=Profile(
+            account_ref="US-JRB-001",
+            owner_account="MAYA LINDQVIST PERSONAL",
+            lender_name="CASCADE CAPITAL",
+            bank_name="WILLAMETTE COMMUNITY BANK",
+            landlord="DIVISION STREET HOLDINGS LLC",
+            supplier_names=_suppliers(1),
+        ),
+        identity="juniper_rye",
+    ),
+    BorrowerSpec(
+        "Northgate Phone Repair LLC", 1, (), 107, Decimal("35000"), "open",
+        profile=Profile(
+            account_ref="US-NPR-001",
+            processor_name="SQUARE PAYMENTS",
+            processor_source="square",
+            owner_account="DIEGO SALAZAR PERSONAL",
+            lender_name="SONORAN LENDING",
+            bank_name="SAGUARO STATE BANK",
+            landlord="ORACLE ROAD PLAZA LLC",
+            supplier_names=_suppliers(4),
+        ),
+        identity="northgate",
     ),
 )  # fmt: skip
 
@@ -604,6 +638,10 @@ def seed_demo(
     analyst_p = lookup_principal(url, tenant_id, ANALYST)
     seeded: list[SeededBorrower] = []
     for spec, borrower_id, first, last, offset, as_of, loud, described in staged:
+        if spec.identity is not None:
+            with tenant_session(url, tenant_id) as conn:
+                app = US_BY_KEY[spec.identity].application(as_of - timedelta(days=1))
+                insert_application(conn, tenant_id, borrower_id, app)
         with tenant_session(url, tenant_id) as conn:
             case = services.create_new_case(
                 conn, admin_p, borrower_id=borrower_id, as_of=as_of,
