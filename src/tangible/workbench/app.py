@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from tangible.workbench import services, ui
 from tangible.workbench.api import assessments, cases
 from tangible.workbench.auth import Authenticator, DevHeaderAuthenticator, OidcAuthenticator
+from tangible.workbench.gate import PasswordGate
 from tangible.workbench.oidc import OidcRuntime, build_runtime, missing_settings
 from tangible.workbench.settings import Settings
 
@@ -31,6 +32,8 @@ def create_app(
     `http_client` is the injectable client for IdP requests (tests). An explicitly passed
     `authenticator` replaces the API authenticator (tests only)."""
     settings = settings or Settings.from_env()
+    if settings.access_password and settings.auth_mode != "dev":
+        raise ValueError("TANGIBLE_ACCESS_PASSWORD is for dev-auth demos; OIDC needs no gate")
     runtime: OidcRuntime | None = None
     if settings.auth_mode == "dev":
         authenticator = authenticator or DevHeaderAuthenticator(settings.database_url)
@@ -47,9 +50,16 @@ def create_app(
 
     for exc_type in _STATUS:
         app.add_exception_handler(exc_type, domain_error)
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz() -> dict[str, bool]:
+        return {"ok": True}
+
     app.include_router(cases.router)
     app.include_router(assessments.router)
     ui.install(app)
+    if settings.access_password:
+        app.add_middleware(PasswordGate, password=settings.access_password)
     return app
 
 
@@ -57,7 +67,8 @@ def main() -> None:
     app = create_app(Settings.from_env())
     uvicorn.run(
         app, host=os.environ.get("TANGIBLE_HOST", "127.0.0.1"),
-        port=int(os.environ.get("TANGIBLE_PORT", "8000")),
+        # PORT is what hosting platforms (Railway, Heroku) assign; TANGIBLE_PORT wins if set.
+        port=int(os.environ.get("TANGIBLE_PORT") or os.environ.get("PORT") or "8000"),
     )  # fmt: skip
 
 
