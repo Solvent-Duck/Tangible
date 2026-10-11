@@ -10,7 +10,7 @@ POLICIES = Path(__file__).parent.parent / "policies"
 def test_default_policy_loads_with_stable_hash():
     a = load_policy(POLICIES / "default.yaml")
     b = load_policy(POLICIES / "default.yaml")
-    assert a.version == "0.3.0"
+    assert a.version == "0.4.0"
     assert a.sha256 == b.sha256 and len(a.sha256) == 64
     assert a.spec["knockout"]["open_finding_severity"] == "hold"
 
@@ -30,9 +30,31 @@ def test_released_022_file_is_kept_byte_for_byte():
     assert old.parsed.check_set == "cs-3" and old.parsed.knockout.model_hold_states is None
 
 
+def test_released_030_file_is_kept_byte_for_byte():
+    # Assessments frozen under 0.3.0 carry this hash (default.yaml before 0.4.0).
+    old = load_policy(POLICIES / "default-0.3.0.yaml")
+    assert old.version == "0.3.0" and old.parsed is not None and old.parsed.uplift is None
+    assert old.sha256 == "90140828f0221745894876aa5d97f164a77e4b55b4b29c722d3e2917c1f4dfe3"
+
+
+def test_040_adds_uplift_on_ms3_cs5_and_keeps_bands_and_limits_of_030():
+    old = load_policy(POLICIES / "default-0.3.0.yaml")
+    new = load_policy(POLICIES / "default.yaml")
+    assert old.parsed is not None and new.parsed is not None
+    assert (new.parsed.metric_set, new.parsed.check_set) == ("ms-3", "cs-5")
+    assert new.parsed.bands == old.parsed.bands and new.parsed.limit == old.parsed.limit
+    assert new.parsed.knockout == old.parsed.knockout
+    up = new.parsed.uplift
+    assert up is not None and up.max_notches == 1 and up.ceiling == "B"
+    assert [(r.name, r.enabled) for r in up.routes] == [
+        ("reputation", False), ("loyalty", True), ("stock", True),
+    ]  # fmt: skip
+    assert up.requires_for == ("reputation",)
+
+
 def test_030_pins_cs4_and_the_same_metric_set_as_022():
     old = load_policy(POLICIES / "default-0.2.2.yaml")
-    new = load_policy(POLICIES / "default.yaml")
+    new = load_policy(POLICIES / "default-0.3.0.yaml")
     assert old.parsed is not None and new.parsed is not None
     assert new.parsed.check_set == "cs-4" and new.parsed.metric_set == old.parsed.metric_set
     assert new.parsed.knockout.model_hold_states == ("accepted",)

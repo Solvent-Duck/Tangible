@@ -1,9 +1,9 @@
 # Default policy. Each lender gets its own copy; the lender's credit team owns it.
-# Steps run in order: knockout -> bands -> review cap -> limit. Thresholds are starting guesses;
-# tune on the backtest. max/min are inclusive.
-version: "0.3.0"
-metric_set: ms-2
-check_set: cs-4
+# Steps run in order: knockout -> bands -> uplift -> review cap -> limit. Thresholds are starting
+# guesses; tune on the backtest. max/min are inclusive.
+version: "0.4.0"
+metric_set: ms-3
+check_set: cs-5
 
 knockout:
   # A hold finding in these review states blocks a decision.
@@ -23,6 +23,26 @@ bands:
     when: { refund_rate: { max: 0.08 } }
   - band: D
     when: {}
+
+uplift:
+  # (0.4.0) Strengths outside the ledger's bands can lift the band ONE notch at most, never above
+  # the ceiling, and never after a knockout. It runs before the review cap, so an open review
+  # finding still caps the band. Any one enabled route is enough; routes do not stack. A route
+  # with a missing metric is not evaluated. All thresholds are guesses (docs/intangibles-plan.md).
+  max_notches: 1
+  ceiling: B
+  # Added to the reputation route only: every public signal must come from a match that counts.
+  requires: { entity_match_ok: { min: 1 } }
+  requires_for: [reputation]
+  routes:
+    # Google/Yelp ratings have no history, so this route cannot be backtested yet: present for
+    # analysts to see, off until a lender turns it on.
+    reputation:
+      { enabled: false, review_rating_shrunk: { min: 4.4 }, review_count: { min: 75 }, years_trading: { min: 3 } }
+    loyalty:
+      { repeat_customer_share: { min: 0.35 }, loyalty_mention_share: { min: 0.15 } }
+    stock:
+      { stock_cover: { min: 1.0 }, aged_stock_share: { max: 0.20 }, days_of_inventory: { max: 120 } }
 
 review_findings:
   # Open or accepted review-severity findings cap the band: best possible is C.
