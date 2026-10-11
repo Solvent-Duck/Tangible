@@ -19,6 +19,8 @@ from tangible.agent.strands_engine import build_agent, run_strands
 from tangible.agent.strands_engine.guardrails import RunState
 from tangible.agent.strands_engine.model import ModelClientModel, to_events, to_neutral
 from tangible.agent.tools import open_context, tool_definitions
+from tangible.assessment import freeze
+from tangible.db.cases import get_case
 from tangible.db.findings import load_findings
 from tangible.db.session import Conn, tenant_session
 from tangible.db.signals import insert_application
@@ -373,3 +375,15 @@ def test_search_team_records_true_listings_and_the_decoy_is_refused(
         lead_first = client.seen["lead"][0][0]["content"]
         assert '<agent_report agent="reputation_agent" untrusted="true">' in lead_first
         assert "Tucson listing recorded." in lead_first
+
+        # The recorded signal changed the known ledger: the run refreshed the baseline, so the
+        # case freezes on metrics that see it.
+        frozen = freeze(conn, get_case(conn, case.id), load_policy(POLICY_PATH), created_by="ana")
+        metrics = dict(
+            conn.execute(
+                "SELECT metric_key, value FROM assessment_item ai JOIN metric_value mv "
+                "ON mv.id = ai.ref_id WHERE ai.assessment_id = %s AND ai.kind = 'metric'",
+                (frozen.assessment_id,),
+            ).fetchall()
+        )
+        assert metrics["review_count"] is not None and metrics["entity_match_ok"] == 1

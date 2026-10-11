@@ -30,6 +30,8 @@ from tangible.agent.tools.library import library_catalog
 from tangible.agent.tools.runtime import Verifier
 from tangible.agent.verify import verify_numbers
 from tangible.assessment import run_baseline
+from tangible.assessment.baseline import refresh_baseline
+from tangible.assessment.hashing import ledger_input_hash
 from tangible.db.cases import Case, set_case_status
 from tangible.db.findings import load_findings
 from tangible.db.repo import load_ledger
@@ -445,6 +447,7 @@ def investigate(
         raise ValueError(f"unknown engine {engine!r}")
     plan = _approved_plan(conn, case)
     baseline = run_baseline(conn, case, policy)
+    start_hash = ledger_input_hash(load_ledger(conn, case.borrower_id).known(case.as_of))
     if document_client is not None and not isinstance(document_client, LoggedClient):
         # Document reads are model calls too: log them (and their cost) against the case.
         document_client = LoggedClient(
@@ -477,6 +480,11 @@ def investigate(
         outcome = run_strands(setup)
     else:
         outcome = run_classic(setup)
+
+    if ledger_input_hash(load_ledger(conn, case.borrower_id).known(case.as_of)) != start_hash:
+        # The run recorded public signals: metrics and rule checks for the new ledger state,
+        # so the case can be signed on what is now known.
+        refresh_baseline(conn, case, policy)
 
     cost = setup.logged.cost.quantize(Decimal("0.000001"))
     conn.execute(
