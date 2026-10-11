@@ -428,3 +428,17 @@ def test_demo_pipeline_reaches_every_stage(test_db_url: str, tmp_path: Path) -> 
     assert ws["systemic"]["stated"] and {
         line["hs_chapter"] for line in ws["systemic"]["lines"]
     } == {"94", "44"}
+
+
+def test_catalog_rc2_keeps_every_rc1_item_and_adds_payroll_and_the_support_desk():
+    rc1 = {
+        "bank", "accounting", "sales", "bank_statements", "inventory_system", "stock_report",
+        "aged_stock", "website", "google_business", "yelp", "social", "reviews", "customers",
+        "entity", "year_founded", "press", "import_mix",
+    }
+    assert catalog.CURRENT_VERSION == "rc-2"
+    assert set(catalog.ITEMS) == rc1 | {"payroll", "support_desk"}
+    assert "devrev" in catalog.ITEMS["support_desk"].providers
+    assert not catalog.ITEMS["support_desk"].locked and not catalog.ITEMS["payroll"].locked
+    for item in catalog.ITEMS.values():
+        assert len(set(item.providers)) == len(item.providers), item.id

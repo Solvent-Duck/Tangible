@@ -56,6 +56,8 @@ SCOPES: dict[str, tuple[str, ...]] = {
     "sales": ("orders", "refunds", "payouts"),
     "inventory_system": ("inventory",),
     "customers": ("orders", "customers"),
+    "payroll": ("payroll_runs", "headcount"),
+    "support_desk": ("tickets",),
 }
 PROGRESS_EVENTS = ("source_connected", "document_added", "link_added", "answer_added")
 PROFILE_FIELDS = (

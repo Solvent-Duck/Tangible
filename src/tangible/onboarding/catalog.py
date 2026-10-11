@@ -18,7 +18,9 @@ from typing import Any, Final, Literal
 Kind = Literal["connector", "upload", "field", "link"]
 Feeds = Literal["ledger", "intangibles", "systemic", "lender"]
 
-CURRENT_VERSION: Final = "rc-1"
+# rc-2: rc-1 plus more providers on the connector items and two new items (payroll and the
+# customer support desk). Every rc-1 item id is kept, so rc-1 invites still read the same.
+CURRENT_VERSION: Final = "rc-2"
 MAX_CUSTOM: Final = 5
 MAX_CUSTOM_LABEL: Final = 120
 
@@ -60,19 +62,23 @@ _ITEMS: Final[tuple[Item, ...]] = (
     # standard financials
     Item("bank", "financials", "Business bank accounts",
          "Read-only transactions and balances.", "connector", "ledger", locked=True,
-         providers=("plaid",)),
+         providers=("plaid", "mx", "finicity")),
     Item("accounting", "financials", "Accounting system",
          "Invoices, bills and the general ledger.", "connector", "ledger", locked=True,
-         providers=("quickbooks", "xero", "freshbooks")),
+         providers=("quickbooks", "xero", "freshbooks", "sage", "netsuite", "wave", "zoho_books")),
     Item("sales", "financials", "Sales & payment processors",
          "Orders, refunds and payouts.", "connector", "ledger", locked=True,
-         providers=("shopify", "stripe", "square", "amazon", "etsy")),
+         providers=("shopify", "stripe", "square", "amazon", "etsy", "paypal", "woocommerce",
+                    "bigcommerce", "clover", "toast", "ebay")),
+    Item("payroll", "financials", "Payroll",
+         "Headcount and wage bill, so payroll can be matched to the bank.", "connector", "ledger",
+         providers=("gusto", "adp", "rippling", "paychex")),
     Item("bank_statements", "financials", "Bank statements (PDF)",
          "Fallback for any account that cannot be connected.", "upload", "ledger", locked=True),
     # inventory
     Item("inventory_system", "inventory", "Inventory system",
          "Live stock levels and cost.", "connector", "ledger", default_on=True,
-         providers=("shopify", "quickbooks", "cin7", "lightspeed")),
+         providers=("shopify", "quickbooks", "cin7", "lightspeed", "netsuite", "katana")),
     Item("stock_report", "inventory", "Stock report (CSV or spreadsheet)",
          "Item, quantity on hand and unit cost.", "upload", "ledger", default_on=True),
     Item("aged_stock", "inventory", "Aged stock report",
@@ -90,7 +96,10 @@ _ITEMS: Final[tuple[Item, ...]] = (
          "Links to Trustpilot, Google or marketplace reviews.", "link", "intangibles"),
     Item("customers", "reputation", "Customer & repeat-purchase data",
          "Comes from the sales connection; shows how many customers come back.",
-         "connector", "ledger", providers=("shopify", "square", "stripe")),
+         "connector", "ledger", providers=("shopify", "square", "stripe", "toast", "clover")),
+    Item("support_desk", "reputation", "Customer support desk",
+         "Tickets and how quickly complaints are resolved.", "connector", "ledger",
+         providers=("devrev", "zendesk", "intercom", "freshdesk", "gorgias")),
     # longevity & entity
     Item("entity", "longevity", "Legal name, DBA and state of registration",
          "Who the business is on paper.", "field", "intangibles", default_on=True),
