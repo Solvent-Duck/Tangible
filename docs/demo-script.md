@@ -33,10 +33,10 @@ and connections seeded days earlier would read as stale.
 | Borrower | State | The story |
 | --- | --- | --- |
 | Harbour & Pine Homeware Ltd | open | Clean business. Kept for the live agent run and the forged statement. |
-| Marlow Lane Interiors Ltd | signed, band C | Daily £450 debits to Fernbank Funding with no invoice: an undisclosed lender. The web lookup finds a court judgment and a registered charge from the same lender. |
+| Marlow Lane Interiors Ltd | signed, band C | Daily £450 debits to Fernbank Funding with no invoice: an undisclosed lender. The agent's web lookups found an £8,450 county court judgment and a registered charge from the same lender (verified agent holds, not blocking until accepted). |
 | Kestrel Gift Co Ltd | signed, no band | Payouts don't reach the bank: a hidden reserve. The rule hold blocks a decision. |
-| Brightwell Crafts Ltd | review | Owner money counted as sales, payouts above orders, stale SumUp feed. Director change on the public registry. A review page carries an injection attempt. |
-| Oakden Trading Ltd | review | Amazon income from an account it never connected; bank access revoked mid-review. |
+| Brightwell Crafts Ltd | review | Owner money counted as sales, payouts above orders, stale SumUp feed. A review page carries an injection attempt; the agent ignored it and recorded it as an info finding. The registry also shows a director change: a good send-back question ("check the companies registry for officer changes"). |
+| Oakden Trading Ltd | review | Amazon income from an account it never connected; bank access revoked 3 days before the case date (both agent holds, verified). |
 
 ## Flow (about 15 minutes)
 
@@ -58,8 +58,9 @@ and connections seeded days earlier would read as stale.
 5. **Review.** On **Brightwell**:
    - Accept the self-transfer finding.
    - Reject one finding with a reason.
-   - Send back with a question, e.g. "Check public records for this company".
-   - Show the injection attempt on the reviews page, quoted as untrusted data and ignored.
+   - Send back with a question, e.g. "Check the companies registry for officer changes" (the fixtures show a director change in July).
+   - Show the info finding about the review-page injection: the agent quoted it and did not act on it.
+   - Show a corrected finding: "Superseded earlier version" holds the version that failed verification.
 6. **Forged statement.** On a fresh open case (or Harbour & Pine before step 4), upload
    `data/demo/statements/harbour-pine-homeware-ltd-statement-forged.pdf` with **Upload and
    rebase** (about 50 seconds while the statement is read). The new case's baseline shows a
@@ -83,6 +84,13 @@ and connections seeded days earlier would read as stale.
   from the rehearsal instead.
 - **Cost:** the case page shows model calls and cost per case. About $0.50–$1 per
   investigation.
+
+## Reference run (Oct 10, tenant `demo-20261010-2141`)
+
+- **Cost and length:** $2.37 for 4 investigations, 14–31 steps each (budget 40).
+- **Web lookups:** 19.
+- **Corrections:** 10 findings were corrected with `replaces`, and the earlier versions show as superseded.
+- **Verification:** 6 of 24 current agent findings are unverified. Most are review-site figures (ratings, percentages) that the checker can't match in quoted web text.
 
 ## Don't claim
 
