@@ -27,6 +27,11 @@ CHECK_SETS["cs-2"] = (*CHECK_SETS["cs-1"], ("document_mismatch", 1), ("document_
 CHECK_SETS["cs-3"] = tuple(
     ("time_gaps", 2) if member == ("time_gaps", 1) else member for member in CHECK_SETS["cs-2"]
 )
+# cs-4: books_vs_processor v2 (waits for payouts to settle) replaces v1.
+CHECK_SETS["cs-4"] = tuple(
+    ("books_vs_processor", 2) if member == ("books_vs_processor", 1) else member
+    for member in CHECK_SETS["cs-3"]
+)
 
 
 def check_set(set_id: str) -> tuple[tuple[str, int], ...]:
