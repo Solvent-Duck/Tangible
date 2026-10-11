@@ -15,8 +15,8 @@ Waves 0–4 are merged on `main` and `make check` passes. Status as of Oct 10, 2
 | Schema | Migrations 0001–0006: four layers, RLS on every tenant table, immutability triggers, model-finding citation check, cases and agent tables, documents, workbench, connectors. |
 | Ledger | All row types (orders, refunds, payouts, bank transactions, invoices, inventory, balances, connections, applications, statements) and `known_as_of`. |
 | Metrics | 23 metrics in set `ms-2`. |
-| Checks | 17 checks in set `cs-3` (`time_gaps` v2 with UK bank holidays). |
-| Policy | Typed schema, evaluator, review state; `default.yaml` 0.2.2. |
+| Checks | Set `cs-4`: `cs-3` with `books_vs_processor` v2 (waits for settlement). |
+| Policy | Typed schema, evaluator, review state; `default.yaml` 0.3.0 (agent holds block only once accepted); 0.2.2 kept for replay. |
 | Assessment | Baseline, freeze and replay. |
 | Agent | Plan, analyst approval, budgeted investigation loop with wrap-up notices; eight logged tools; analysis sandbox; number verifier; prompts `plan@v2` and `investigate@v2`. Live end-to-end smoke test passed on Bedrock (Amazon Nova 2 Lite). |
 | Backtest | Harness and report, run on a synthetic cohort. |

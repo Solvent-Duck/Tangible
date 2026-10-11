@@ -41,16 +41,23 @@ call fails.
 
 ## P1: show every feature
 
-| # | Item | Notes |
-| --- | --- | --- |
-| 6 | Distinct borrowers | Each borrower gets its own counterparty names, processor and account instead of "J SMITH / SHOPIFY / GB-OPS-001". |
-| 7 | Documents | Generate PDF statements from a borrower's own ledger: genuine, forged (→ `document_mismatch` hold), edited after creation (→ `document_file_traits`), and one with injected instructions. |
-| 8 | Web lookup | A fixture provider in demo mode with entries for the demo borrowers: reviews, company registry, one court-record hit and one injection page. Today the tool always fails in the workbench. |
-| 9 | Connections | The setup writes `connection` rows, including one revoked mid-review, so `stale_connection` and `revoked_mid_review` fire. |
-| 10 | Stated vs observed | The database loader hard-codes `applications=()`, so this check never fires. Needs an application table (migration 0007), or leave it out of the demo. |
-| 10b | `books_vs_processor` false review on clean data | When the last data day is around the 5th to 9th, the previous month is judged before its last payouts have settled. Every merchant trips this about 9–11 weeks a year. The seed works around it by moving `end_on` back up to 4 weeks. The real fix is a v2 that waits for settlement. |
-| 11 | Prompt `investigate@v3` | (a) Compute every derived number (ratio, difference, %) with `run_analysis` before writing it, so it can be cited. In the pre-run, about 80% of unmatched numbers were this. (b) Don't record "all clean" findings, or show them in a separate "checked, nothing found" section. |
-| 11b | Decide: should an agent hold block the decision before review? | Policy knockout counts any open `hold`, including agent findings that are unverified and unreviewed. In the pre-run, Brightwell was knocked out by an unverified agent hold. Option: agent holds block only once an analyst accepts them (needs a new policy version). |
+**Status (Oct 10): items 6–9, 10b, 11 and 11b are merged on `demo-readiness`** (`make check` 855 passed). Item 10 (stated vs observed) is not started; it's still your call.
+
+- **6 Distinct borrowers:** each borrower has its own profile: account, processor (Shopify/Stripe/Square/SumUp), owner and lender names, bank, landlord and suppliers.
+- **7 Documents:** `tangible-demo statements` writes genuine, forged (→ `document_mismatch` hold), edited (→ `document_file_traits` review) and injection PDFs from the ledger.
+  - Rebase now reads late uploads, so the document checks can fire. Before, they never could.
+  - "Upload and rebase" is one step while a case is open or planning.
+- **8 Web lookup:** a fixture provider (`TANGIBLE_WEB_PROVIDER=fixtures`) for the five borrowers:
+  - Marlow Lane: Fernbank Funding court judgment and charge.
+  - Brightwell: director change, plus a review page with injected instructions.
+  - Oakden: Amazon storefront.
+  - Kestrel: refund complaints.
+- **9 Connections:** Brightwell's SumUp feed is stale (review). Oakden's bank was revoked 3 days before as_of (hold).
+- **10b:** `books_vs_processor` v2 in check set `cs-4`.
+- **11:** `investigate@v3`. The agent is told whether each finding verified. Its wrap-up message is stored and shown.
+- **11b:** policy 0.3.0. Agent holds block only once accepted. Replay uses the policy file the assessment was frozen under.
+
+Not yet tested with a live model: v3's verified rate, the web lookups, and reading documents at rebase. All of these need a paid `--run-agent` pre-run.
 
 ## P2: polish
 

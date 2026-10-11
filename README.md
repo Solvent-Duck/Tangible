@@ -32,7 +32,7 @@ make demo
 | `src/tangible/ledger/` | Ledger row types and `known_as_of`, the single place the `observed_at` time rule lives. |
 | `src/tangible/ingest/`, `src/tangible/datasets/` | Load data into the ledger (`tangible-ingest`); UCI Online Retail loader and a synthetic generator with planted problems. |
 | `src/tangible/metrics/` | 23 versioned pure metrics (health and momentum), pinned as set `ms-2`. |
-| `src/tangible/checks/` | 17 versioned integrity checks (reconciliation, completeness, tampering, documents), pinned as set `cs-3`; they emit findings. |
+| `src/tangible/checks/` | 17 versioned integrity checks (reconciliation, completeness, tampering, documents), pinned as set `cs-4` (`books_vs_processor` v2 waits for settlement); they emit findings. |
 | `src/tangible/policy/` | Policy loader (version + hash), typed schema, evaluator (band and limit) and review state. |
 | `src/tangible/assessment/` | Baseline, freeze and replay of an assessment (`tangible-replay`). |
 | `src/tangible/agent/` | Investigation loop: plan, analyst approval, then a step- and cost-budgeted tool run. Eight logged tools, an analysis sandbox, a number verifier and versioned prompts. `llm.py` is the only vendor-aware module (Bedrock Converse). |
@@ -41,7 +41,8 @@ make demo
 | `src/tangible/connectors/` | Rutter and Plaid adapters (`tangible-pull`) and sandbox seeding (`tangible-sandbox`). |
 | `src/tangible/backtest/` | Runs a cohort as of each loan's decision date and reports loss by band, metric discrimination, finding lift, plants caught, replay matches and agent spread (`tangible-backtest`). |
 | `src/tangible/workbench/` | Analyst workbench: FastAPI API and Jinja2/htmx UI with OIDC login (`tangible-workbench`). |
-| `policies/default.yaml` | Default lender policy 0.2.2 (starting-guess thresholds). |
+| `src/tangible/demo/` | Demo tenant seed (`tangible-demo seed`, `make demo`) and statement PDFs from a borrower's ledger (`tangible-demo statements`). |
+| `policies/default.yaml` | Default lender policy 0.3.0 (starting-guess thresholds; agent holds block only once an analyst accepts them). Older versions are kept beside it (`default-0.2.2.yaml`) so replay can use the policy an assessment was frozen under. |
 
 ## Status
 
