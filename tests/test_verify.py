@@ -58,3 +58,58 @@ def test_nested_results() -> None:
 
 def test_booleans_not_numbers() -> None:
     assert not verify_numbers("Count 1.", [{"flag": True}]).ok
+
+
+def test_window_phrases_ignored() -> None:
+    for text in (
+        "in the last 90 days",
+        "latest weekly 30-day revenue",
+        "a 13-week slope",
+        "outside the prior 25 weeks",
+        "over 12 months",
+        "trailing 90d revenue",
+        "trailing 13w average",
+        "within 5 business days",
+        "the last 2 quarters and 1 yr and 3 wks and 6 mo and 2 years",
+        "A 30 Day window",
+    ):
+        r = verify_numbers(text, [])
+        assert r.ok and r.checked == 0, text
+
+
+def test_sigma_phrases_ignored() -> None:
+    for text in ("outside mean +/- 2 sigma", "a 3σ move", "beyond 2 σ", "2.5 standard deviations"):
+        r = verify_numbers(text, [])
+        assert r.ok and r.checked == 0, text
+
+
+def test_identifier_tokens_ignored() -> None:
+    text = "change_30v30 = 0.5; slope_13w, revenue_yoy_90d and revenue_break_26w are set"
+    r = verify_numbers(text, [{"x": 0.5}])
+    assert r.ok and r.checked == 1  # only the 0.5 is a claim
+
+
+def test_mixed_window_and_claim() -> None:
+    r = verify_numbers("Over the last 90 days revenue fell 7.0% (30-day basis).", [{"d": -0.07}])
+    assert r.ok and r.checked == 1
+
+
+def test_sign_tolerance() -> None:
+    pool = [{"change": -0.165}]
+    assert verify_numbers("declining (change_30v30 = -16.5%)", pool).ok
+    assert verify_numbers("declining 16.5%", pool).ok
+    assert verify_numbers("Slope was -0.38.", [{"s": 0.3839}]).ok
+    assert verify_numbers("Slope was 0.38.", [{"s": -0.3839}]).ok
+    assert verify_numbers("There were 3 gaps.", [{"n": -3}]).ok
+    assert not verify_numbers("declining 16.6%", pool).ok
+
+
+def test_counts_after_non_unit_words_still_checked() -> None:
+    r = verify_numbers("There were 21 debits and 305 SKUs.", [{"n": 5}])
+    assert not r.ok and r.unmatched == ("21", "305") and r.checked == 2
+    assert verify_numbers("There were 21 debits and 305 SKUs.", [{"a": 21, "b": 305}]).ok
+
+
+def test_derived_percent_flagged_alone() -> None:
+    r = verify_numbers("26.0% (41278.16 of 158975.11)", [{"a": 41278.16, "b": 158975.11}])
+    assert not r.ok and r.unmatched == ("26.0%",) and r.checked == 3
