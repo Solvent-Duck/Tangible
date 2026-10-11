@@ -18,6 +18,12 @@ Run the analyst workbench locally (dev login; production requires OIDC settings 
 TANGIBLE_DEV_AUTH=1 uv run tangible-workbench   # http://127.0.0.1:8000
 ```
 
+Seed a demo tenant (five synthetic borrowers dated to the last week, users ana/adm/len, open cases; prints the dev-login URL). Serve it with the `workbench-demo` launch config on port 8001:
+
+```bash
+make demo
+```
+
 ## Layout
 
 | Path | What |
