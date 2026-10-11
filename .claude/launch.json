@@ -19,6 +19,7 @@
         "TANGIBLE_PRICE_IN_PER_MTOK=3.30",
         "TANGIBLE_PRICE_OUT_PER_MTOK=16.50",
         "AWS_PROFILE=tangible",
+        "TANGIBLE_WEB_PROVIDER=fixtures",
         "TANGIBLE_PORT=8001",
         "uv", "run", "--with", "botocore[crt]", "tangible-workbench"
       ],

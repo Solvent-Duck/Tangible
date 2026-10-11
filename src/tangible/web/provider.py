@@ -229,6 +229,12 @@ class FixtureFetcher:
             (self.dir / "index.json").read_text(encoding="utf-8")
         )
 
+    def _entry(self, url: str) -> dict[str, str] | None:
+        return self.index.get(url)
+
+    def _missing(self, url: str) -> FetchResponse:
+        raise FetchError("no fixture for url")
+
     def fetch(
         self, url: str, allow: Allow, *, max_bytes: int = MAX_BODY_BYTES,
         timeout: float = TIMEOUT_SECONDS,
@@ -236,9 +242,9 @@ class FixtureFetcher:
         for _ in range(MAX_REDIRECTS + 1):
             if not allow(url):
                 raise FetchError("url is not on the allow-list")
-            entry = self.index.get(url)
+            entry = self._entry(url)
             if entry is None:
-                raise FetchError("no fixture for url")
+                return self._missing(url)
             if "redirect" in entry:
                 url = entry["redirect"]
                 continue

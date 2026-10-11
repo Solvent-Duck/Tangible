@@ -9,6 +9,8 @@ from pathlib import Path
 from tangible.agent.llm import ModelClient, Pricing, client_from_env
 from tangible.config import database_url
 from tangible.secrets import EnvSecrets, SecretStore
+from tangible.web.fixtures import demo_provider
+from tangible.web.provider import WebProvider
 
 _DEFAULT_POLICY = Path(__file__).resolve().parents[3] / "policies" / "default.yaml"
 
@@ -30,6 +32,11 @@ class Settings:
     # (none -> NullClient), so the app runs with no model configured.
     client_factory: Callable[[], ModelClient] = client_from_env
     max_upload_bytes: int = 25 * 1024 * 1024
+    # Web lookup for the agent: "none" (the tool reports it is not available) or "fixtures"
+    # (canned pages, no network). There is deliberately no live provider here.
+    web_provider: str = "none"
+    # With web_provider == "fixtures": a path to an index.json; None means the packaged demo set.
+    web_fixtures: Path | None = None
     # --- OIDC (auth_mode == "oidc"). One IdP per deployment is assumed.
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None
@@ -56,13 +63,24 @@ class Settings:
     def secure_cookies(self) -> bool:
         return self.cookie_secure if self.cookie_secure is not None else not self.dev_auth
 
+    def build_web_provider(self) -> WebProvider | None:
+        """The provider handed to the agent's tools; None when web lookup is off."""
+        mode = self.web_provider.strip().lower()
+        if mode == "none":
+            return None
+        if mode == "fixtures":
+            return demo_provider(self.web_fixtures)
+        raise ValueError(f"TANGIBLE_WEB_PROVIDER must be 'none' or 'fixtures', not {mode!r}")
+
     @classmethod
     def from_env(cls) -> "Settings":
         env = os.environ
-        return cls(
+        settings = cls(
             database_url=database_url(),
             evidence_dir=Path(env.get("TANGIBLE_EVIDENCE_DIR", ".evidence")),
             policy_path=Path(env.get("TANGIBLE_POLICY_PATH", str(_DEFAULT_POLICY))),
+            web_provider=env.get("TANGIBLE_WEB_PROVIDER") or "none",
+            web_fixtures=Path(p) if (p := env.get("TANGIBLE_WEB_FIXTURES")) else None,
             dev_auth=env.get("TANGIBLE_DEV_AUTH") == "1",
             oidc_issuer=env.get("TANGIBLE_OIDC_ISSUER") or None,
             oidc_client_id=env.get("TANGIBLE_OIDC_CLIENT_ID") or None,
@@ -79,3 +97,5 @@ class Settings:
                 Decimal(env.get("TANGIBLE_PRICE_OUT_PER_MTOK", "0")),
             ),
         )
+        settings.build_web_provider()  # fail at startup on a bad TANGIBLE_WEB_* setting
+        return settings
