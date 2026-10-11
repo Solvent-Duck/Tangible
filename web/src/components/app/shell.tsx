@@ -71,6 +71,7 @@ function Frame({
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const auth = useAuthState();
   const nav = NAV.filter((n) => n.roles.includes(membership.role));
 
   return (
@@ -80,9 +81,12 @@ function Frame({
         <Link href="/app">
           <Logo />
         </Link>
-        <Button variant="ghost" size="icon" onClick={() => setOpen(true)} aria-label="Open navigation">
-          <Menu />
-        </Button>
+        <div className="flex items-center gap-1">
+          {auth.mode === "clerk" && <UserButton />}
+          <Button variant="ghost" size="icon" onClick={() => setOpen(true)} aria-label="Open navigation">
+            <Menu />
+          </Button>
+        </div>
       </div>
       {open && <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setOpen(false)} />}
       <aside
@@ -193,20 +197,19 @@ function UserFooter({ membership }: { membership: Membership }) {
         <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle dark mode" className="size-8">
           {dark ? <Sun /> : <Moon />}
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          aria-label="Sign out"
-          onClick={async () => {
-            qc.clear();
-            await auth.signOut();
-            router.replace("/");
-          }}
-        >
-          <LogOut />
-        </Button>
       </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="mt-1 w-full justify-start px-3"
+        onClick={async () => {
+          qc.clear();
+          await auth.signOut();
+          router.replace("/");
+        }}
+      >
+        <LogOut /> Sign out
+      </Button>
     </div>
   );
 }

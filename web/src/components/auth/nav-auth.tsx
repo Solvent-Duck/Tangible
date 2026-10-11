@@ -1,4 +1,4 @@
-import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { Show, SignInButton, SignOutButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 
 const btn = "rounded-lg px-3 py-2 text-[14px] font-medium text-muted hover:text-ink";
@@ -28,6 +28,9 @@ export function NavAuth() {
         <Link href="/app" className={btn}>
           Open the workbench
         </Link>
+        <SignOutButton redirectUrl="/">
+          <button className={btn}>Sign out</button>
+        </SignOutButton>
         <UserButton />
       </Show>
     </>
