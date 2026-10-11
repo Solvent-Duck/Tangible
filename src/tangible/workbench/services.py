@@ -13,6 +13,7 @@ rule is never relaxed (late evidence means `rebase`, a new case with a later as_
 
 import json
 import logging
+import os
 import re
 import tempfile
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from tangible.agent.loop import approve_plan as _approve_plan
 from tangible.agent.loop import investigate as _investigate
 from tangible.agent.loop import propose_plan as _propose_plan
 from tangible.agent.loop import send_back as _send_back
+from tangible.agent.verify import verify_numbers
 from tangible.assessment import freeze, record_override, replay
 from tangible.assessment.freeze import review_states
 from tangible.db.cases import Case, create_case, get_case, set_case_status
@@ -51,6 +53,15 @@ _REF = re.compile(
 )
 
 
+STUCK_AFTER_ENV = "TANGIBLE_STUCK_AFTER_MIN"
+DEFAULT_STUCK_AFTER_MIN = 15.0
+# Statuses a run can start from (what `_start` records as prior_status); the reset falls back to
+# 'planning' when the started row has none (rows written before prior_status was recorded).
+_RESTORABLE = ("open", "planning", "review")
+_FALLBACK_STATUS = "planning"
+UNPRICED_NOTE = "cost not priced (set TANGIBLE_PRICE_*)"
+
+
 class WorkbenchError(Exception):
     pass
 
@@ -72,6 +83,46 @@ class Invalid(WorkbenchError):
 
 
 # ---------------------------------------------------------------- helpers
+
+
+def stuck_after_min() -> float:
+    """Minutes after which an 'investigating' case counts as stuck (TANGIBLE_STUCK_AFTER_MIN)."""
+    raw = os.environ.get(STUCK_AFTER_ENV, "").strip()
+    try:
+        value = float(raw) if raw else DEFAULT_STUCK_AFTER_MIN
+    except ValueError:
+        return DEFAULT_STUCK_AFTER_MIN
+    return value if value >= 0 else DEFAULT_STUCK_AFTER_MIN
+
+
+def plain_error(stored: str) -> str:
+    """A stored 'ExcType: message' (as written by the failed-investigation audit row) as a plain
+    sentence for the analyst. Never raises; unknown errors are shown as stored."""
+    text = (stored or "").strip()
+    if not text:
+        return "The investigation failed for an unknown reason."
+    kind, _, msg = text.partition(": ")
+    msg = msg.strip().rstrip(".")
+    if kind == "ModelConfigError":
+        return f"The model is not configured: {msg}."
+    lowered = text.lower()
+    if "accessdenied" in lowered:
+        return (
+            "The model provider denied access, so the agent could not run. Check that this "
+            f"account has been granted access to the configured model ({msg or text})."
+        )
+    if "throttling" in lowered or "too many requests" in lowered:
+        return (
+            "The model provider refused the request as over its rate or quota limit, so the "
+            "agent could not run. Check the account's quota for the configured model "
+            f"({msg or text})."
+        )
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def describe_error(e: BaseException) -> str:
+    """`plain_error` for a live exception (e.g. a ModelConfigError raised before a run starts)."""
+    return plain_error(f"{type(e).__name__}: {e}")
 
 
 def _j(v: Any) -> Any:
@@ -253,7 +304,30 @@ _FINDING_COLS = (
 )
 
 
-def _finding_views(conn: Conn, where: str, arg: Any, *, with_actions: bool) -> list[dict[str, Any]]:
+def _unmatched_numbers(conn: Conn, rows: list[tuple[Any, ...]]) -> dict[str, list[str]]:
+    """Display only, never stored: for each unverified model finding, the numbers in its summary
+    that the verifier cannot find in the results of the tool calls it cites."""
+    todo = [r for r in rows if r[3] == "model" and r[10] is False]
+    if not todo:
+        return {}
+    wanted = sorted({str(i) for r in todo for i in r[9]})
+    results = {
+        str(i): res
+        for i, res in conn.execute(
+            "SELECT id, result FROM tool_call WHERE id::text = ANY(%s)", (wanted,)
+        ).fetchall()
+    }
+    return {
+        str(r[0]): list(
+            verify_numbers(r[7], [results[str(i)] for i in r[9] if str(i) in results]).unmatched
+        )
+        for r in todo
+    }
+
+
+def _finding_views(
+    conn: Conn, where: str, arg: Any, *, with_actions: bool, with_unmatched: bool = False
+) -> list[dict[str, Any]]:
     rows = conn.execute(
         f"SELECT {_FINDING_COLS} FROM finding WHERE {where} ORDER BY created_at, id", (arg,)
     ).fetchall()
@@ -267,6 +341,7 @@ def _finding_views(conn: Conn, where: str, arg: Any, *, with_actions: bool) -> l
             (ids,),
         ).fetchall():
             acts[str(fid)].append({"action": action, "reason": reason, "by": user, "at": _j(at)})
+    unmatched = _unmatched_numbers(conn, rows) if with_unmatched else {}
     out = []
     for r in rows:
         body = r[8] if isinstance(r[8], dict) else {"refs": r[8], "facts": {}}
@@ -284,6 +359,8 @@ def _finding_views(conn: Conn, where: str, arg: Any, *, with_actions: bool) -> l
                 "facts": dict(body.get("facts", {})),
                 "tool_call_ids": list(r[9]),
                 "verified": r[10],
+                # None: not computed (verified, unchecked, or not a display that needs it)
+                "unmatched_numbers": unmatched.get(str(r[0])),
                 "case_id": str(r[11]) if r[11] else None,
                 "review_state": states[str(r[0])],
                 "actions": acts[str(r[0])],
@@ -292,14 +369,18 @@ def _finding_views(conn: Conn, where: str, arg: Any, *, with_actions: bool) -> l
     return out
 
 
-def get_case_detail(conn: Conn, p: Principal, case_id: str) -> dict[str, Any]:
+def get_case_detail(
+    conn: Conn, p: Principal, case_id: str, settings: Settings | None = None
+) -> dict[str, Any]:
     case = _readable_case(conn, p, case_id)
     out = _case_row(case)
     prev = conn.execute(
         "SELECT previous_case_id FROM case_file WHERE id = %s", (case.id,)
     ).fetchone()
     out["previous_case_id"] = str(prev[0]) if prev and prev[0] else None
-    out["findings"] = _finding_views(conn, "case_id = %s", case.id, with_actions=True)
+    out["findings"] = _finding_views(
+        conn, "case_id = %s", case.id, with_actions=True, with_unmatched=True
+    )
     aid = _assessment_id_for_case(conn, case.id)
     out["assessments"] = [_assessment_summary(conn, aid)] if aid else []
     if p.role == "analyst":
@@ -310,15 +391,154 @@ def get_case_detail(conn: Conn, p: Principal, case_id: str) -> dict[str, Any]:
             (case.id,),
         ).fetchone()
         assert usage
-        out["usage"] = _j({"model_calls": usage[0], "cost_usd": usage[1]})
+        # Pricing is configuration (TANGIBLE_PRICE_*, default 0); a $0 total is only meaningful
+        # when prices are set, so say so otherwise.
+        priced = settings is None or (
+            settings.pricing.input_per_mtok > 0 or settings.pricing.output_per_mtok > 0
+        )
+        out["usage"] = _j(
+            {
+                "model_calls": usage[0],
+                "cost_usd": usage[1],
+                "priced": priced,
+                "cost_text": UNPRICED_NOTE if usage[0] and not priced else f"${usage[1]}",
+            }
+        )
         stop = conn.execute(
             "SELECT detail, at FROM audit_log WHERE action = 'investigation_stopped' "
             "AND object_id = %s ORDER BY at DESC LIMIT 1",
             (case.id,),
         ).fetchone()
         out["last_investigation"] = _j({**stop[0], "at": stop[1]}) if stop else None
+        out.update(_run_notices(conn, case))
     audit.record(conn, p, "view", "case", case.id)
     return out
+
+
+def case_status_view(conn: Conn, p: Principal, case_id: str) -> dict[str, Any]:
+    """What the polled status partial shows. Same access as the case page, but no audit row per
+    poll."""
+    case = _readable_case(conn, p, case_id)
+    out: dict[str, Any] = {"id": case.id, "status": case.status}
+    if p.role == "analyst":
+        out.update(_run_notices(conn, case))
+    return out
+
+
+# ---------------------------------------------------------------- run state
+
+
+def _latest_audit(
+    conn: Conn, case_id: str, action: str, *, after: datetime | None = None
+) -> tuple[dict[str, Any], datetime, str] | None:
+    row = conn.execute(
+        "SELECT detail, at, actor FROM audit_log WHERE action = %s AND object_id = %s "
+        "AND (%s::timestamptz IS NULL OR at > %s::timestamptz) ORDER BY at DESC, id LIMIT 1",
+        (action, case_id, after, after),
+    ).fetchone()
+    return (dict(row[0]), row[1], row[2]) if row else None
+
+
+def _run_state(conn: Conn, case: Case) -> dict[str, Any]:
+    """The latest investigation start for a case and whether an 'investigating' case is stuck."""
+    row = conn.execute(
+        "SELECT at, detail, EXTRACT(EPOCH FROM clock_timestamp() - at) / 60.0 FROM audit_log "
+        "WHERE action = 'investigation_started' AND object_id = %s ORDER BY at DESC, id LIMIT 1",
+        (case.id,),
+    ).fetchone()
+    limit = stuck_after_min()
+    started_at: datetime | None = row[0] if row else None
+    age = float(row[2]) if row else None
+    prior = row[1].get("prior_status") if row and isinstance(row[1], dict) else None
+    # No started row at all means no live job can exist for an 'investigating' case.
+    stuck = case.status == "investigating" and (age is None or age >= limit)
+    return {
+        "started_at": started_at,
+        "age_minutes": age,
+        "stuck_after_min": limit,
+        "stuck": stuck,
+        "prior_status": prior if prior in _RESTORABLE else _FALLBACK_STATUS,
+    }
+
+
+def _run_notices(conn: Conn, case: Case) -> dict[str, Any]:
+    """The latest failure / reset notice (hidden once a later investigation has started) and, for
+    an 'investigating' case, how long it has been running."""
+    state = _run_state(conn, case)
+    after = state["started_at"]
+    failed = _latest_audit(conn, case.id, "investigation_failed", after=after)
+    reset = _latest_audit(conn, case.id, "investigation_reset", after=after)
+    run = None
+    if case.status == "investigating":
+        age = state["age_minutes"]
+        run = {
+            "started_at": state["started_at"],
+            "age_minutes": None if age is None else round(age, 1),
+            "stuck_after_min": state["stuck_after_min"],
+            "stuck": state["stuck"],
+            "restores_to": state["prior_status"],
+        }
+    return {
+        "last_failure": None
+        if failed is None
+        else _j(
+            {
+                "at": failed[1],
+                "error": failed[0].get("error", ""),
+                "message": plain_error(str(failed[0].get("error", ""))),
+                # rows from before restored_status was recorded: the case's status now
+                "restored_status": failed[0].get("restored_status") or case.status,
+            }
+        ),
+        "last_reset": None
+        if reset is None
+        else _j(
+            {
+                "at": reset[1],
+                "by": reset[2],
+                "reason": reset[0].get("reason", ""),
+                "restored_status": reset[0].get("restored_status") or case.status,
+            }
+        ),
+        "run": _j(run) if run else None,
+    }
+
+
+def reset_stuck_investigation(
+    conn: Conn, p: Principal, case_id: str, reason: str
+) -> dict[str, Any]:
+    """Put a stuck 'investigating' case back to the status it had before the run. Allowed for
+    the assigned analyst and a credit admin, only when the latest start is older than
+    TANGIBLE_STUCK_AFTER_MIN. Writes an audit row with the reason; deletes nothing."""
+    if p.role == "analyst":
+        case = _driven_case(conn, p, case_id)
+    elif p.role == "credit_admin":
+        case = _load_case(conn, case_id)
+    else:
+        raise Forbidden("only the assigned analyst or a credit admin can reset an investigation")
+    reason = _need_reason(reason)
+    conn.execute("SELECT 1 FROM case_file WHERE id = %s FOR UPDATE", (case.id,))
+    case = _load_case(conn, case.id)  # re-read under the lock
+    if case.status != "investigating":
+        raise Conflict(f"case is '{case.status}'; only an 'investigating' case can be reset")
+    state = _run_state(conn, case)
+    if not state["stuck"]:
+        raise Conflict(
+            f"the investigation started {state['age_minutes']:.0f} minute(s) ago; it can be "
+            f"reset after {state['stuck_after_min']:g} minutes"
+        )
+    restored = state["prior_status"]
+    set_case_status(conn, case.id, restored)
+    audit.record(
+        conn, p, "investigation_reset", "case", case.id,
+        {
+            "reason": reason,
+            "restored_status": restored,
+            "started_at": state["started_at"],
+            "stuck_after_min": state["stuck_after_min"],
+        },
+    )  # fmt: skip
+    return {"case_id": case.id, "status": restored, "reset": True}
 
 
 def _plans(conn: Conn, case_id: str) -> list[dict[str, Any]]:
@@ -436,7 +656,10 @@ class InvestigationJob:
                 set_case_status(conn, self.case_id, self.prior_status)
                 audit.record(
                     conn, self.principal, "investigation_failed", "case", self.case_id,
-                    {"error": f"{type(e).__name__}: {e}"[:500]},
+                    {
+                        "error": f"{type(e).__name__}: {e}"[:500],
+                        "restored_status": self.prior_status,
+                    },
                 )  # fmt: skip
 
 
@@ -448,7 +671,7 @@ def _start(
     set_case_status(conn, case.id, "investigating")
     audit.record(
         conn, p, "investigation_started", "case", case.id,
-        {"send_back": question is not None},
+        {"send_back": question is not None, "prior_status": case.status},
     )  # fmt: skip
     return job
 
@@ -741,7 +964,9 @@ def trace_finding(
     case = _readable_case(conn, p, case_id)
     findings = [
         f
-        for f in _finding_views(conn, "case_id = %s", case.id, with_actions=False)
+        for f in _finding_views(
+            conn, "case_id = %s", case.id, with_actions=False, with_unmatched=True
+        )
         if f["id"] == finding_id
     ]
     if not findings:

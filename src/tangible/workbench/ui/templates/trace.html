@@ -6,6 +6,7 @@
 {% set f = t.finding %}
 <h2><span class="sev">{{ f.severity | upper }}</span> {{ f.summary }}</h2>
 <p>check {{ f.check_key }} v{{ f.check_version }} | origin {{ f.origin }}{% if f.origin == 'model' %} | {{ 'verified' if f.verified else 'UNVERIFIED' }}{% endif %} | state {{ f.review_state }}</p>
+{% include "_unmatched.html" %}
 
 <h2>Tool calls ({{ t.tool_calls | length }})</h2>
 {% for tc in t.tool_calls %}

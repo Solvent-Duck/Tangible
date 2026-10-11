@@ -1,3 +1,22 @@
-<div id="inv-status" {% if c.status == 'investigating' %}hx-get="/cases/{{ c.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %} role="status">
-  Status: <strong>{{ c.status }}</strong>{% if c.status == 'investigating' %} - the agent is working; this updates automatically (reload to refresh without JavaScript).{% endif %}
+{% set stuck = c.run and c.run.stuck %}
+<div id="inv-status" {% if c.status == 'investigating' and not stuck %}hx-get="/cases/{{ c.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %} role="status">
+  Status: <strong>{{ c.status }}</strong>{% if c.status == 'investigating' and not stuck %} - the agent is working; this updates automatically (reload to refresh without JavaScript).{% endif %}
+  {% if c.status == 'investigating' and stuck %}
+  <p class="flash flash-error" id="inv-stuck">This investigation looks stuck:
+    {% if c.run.started_at %}it started {{ c.run.started_at }} ({{ c.run.age_minutes }} minutes ago, more than {{ c.run.stuck_after_min }}) and has not finished; the server may have restarted.{% else %}no start was recorded for it, so nothing is running.{% endif %}
+    Resetting puts the case back to <strong>{{ c.run.restores_to }}</strong>; nothing is deleted.</p>
+  {% if is_analyst %}
+  <form method="post" action="/cases/{{ c.id }}/reset">
+    <label for="reset-reason">Reason (required)</label>
+    <input id="reset-reason" name="reason" required size="40">
+    <button>Reset stuck investigation</button>
+  </form>
+  {% endif %}
+  {% endif %}
+  {% if c.last_failure %}
+  <p class="flash flash-error" role="alert" id="inv-failure"><strong>The last investigation failed</strong> at {{ c.last_failure.at }}: {{ c.last_failure.message }} The case went back to <strong>{{ c.last_failure.restored_status }}</strong>.</p>
+  {% endif %}
+  {% if c.last_reset %}
+  <p class="flash" id="inv-reset"><strong>Investigation reset</strong> by {{ c.last_reset.by }} at {{ c.last_reset.at }} ({{ c.last_reset.reason }}). The case went back to <strong>{{ c.last_reset.restored_status }}</strong>.</p>
+  {% endif %}
 </div>
