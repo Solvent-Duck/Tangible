@@ -6,6 +6,24 @@
       "runtimeExecutable": "env",
       "runtimeArgs": ["TANGIBLE_DEV_AUTH=1", "TANGIBLE_EVIDENCE_DIR=.evidence", "uv", "run", "tangible-workbench"],
       "port": 8000
+    },
+    {
+      "name": "workbench-demo",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TANGIBLE_DEV_AUTH=1",
+        "TANGIBLE_EVIDENCE_DIR=.evidence",
+        "TANGIBLE_MODEL_BACKEND=bedrock",
+        "TANGIBLE_BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "TANGIBLE_BEDROCK_REGION=us-east-2",
+        "TANGIBLE_PRICE_IN_PER_MTOK=3.30",
+        "TANGIBLE_PRICE_OUT_PER_MTOK=16.50",
+        "AWS_PROFILE=tangible",
+        "TANGIBLE_WEB_PROVIDER=fixtures",
+        "TANGIBLE_PORT=8001",
+        "uv", "run", "--with", "botocore[crt]", "tangible-workbench"
+      ],
+      "port": 8001
     }
   ]
 }

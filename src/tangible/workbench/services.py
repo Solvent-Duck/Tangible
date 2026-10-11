@@ -36,6 +36,7 @@ from tangible.evidence import resolve as evidence_resolve
 from tangible.evidence.store import LocalEvidenceStore
 from tangible.ledger.evidence import EvidenceRef
 from tangible.policy import load_policy
+from tangible.web.provider import WebProvider
 from tangible.workbench import audit
 from tangible.workbench.auth import Principal
 from tangible.workbench.settings import Settings
@@ -408,6 +409,7 @@ class InvestigationJob:
     client: ModelClient
     prior_status: str
     question: str | None = None
+    web_provider: WebProvider | None = None  # None: web_lookup reports it is not available
 
     def run(self) -> None:
         s = self.settings
@@ -422,6 +424,7 @@ class InvestigationJob:
                         "workdir": Path(tmp),
                         "document_client": self.client,
                         "evidence_store": store,
+                        "web_provider": self.web_provider,
                     }
                     if self.question is None:
                         _investigate(conn, case, policy, self.client, **common)
@@ -444,7 +447,9 @@ def _start(
     conn: Conn, settings: Settings, p: Principal, case: Case, question: str | None
 ) -> InvestigationJob:
     client = settings.client_factory()
-    job = InvestigationJob(settings, p, case.id, client, case.status, question)
+    job = InvestigationJob(
+        settings, p, case.id, client, case.status, question, settings.build_web_provider()
+    )
     set_case_status(conn, case.id, "investigating")
     audit.record(
         conn, p, "investigation_started", "case", case.id,
