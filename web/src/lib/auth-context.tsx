@@ -46,3 +46,24 @@ export function storeTenant(tenant: string | null): void {
     /* private mode: the tenant is re-chosen on the next load */
   }
 }
+
+const INVITE_KEY = "tangible.invite";
+
+/** The invite token last opened in this browser, so a business that signs in some other way
+ * (the landing page, a Google redirect) can find its way back to accept it. */
+export function storedInvite(): string | null {
+  try {
+    return window.localStorage.getItem(INVITE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function storeInvite(token: string | null): void {
+  try {
+    if (token) window.localStorage.setItem(INVITE_KEY, token);
+    else window.localStorage.removeItem(INVITE_KEY);
+  } catch {
+    /* private mode: the business opens the email link again */
+  }
+}

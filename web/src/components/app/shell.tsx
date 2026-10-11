@@ -22,7 +22,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Avatar, Notice, Skeleton } from "@/components/ui/misc";
-import { storeTenant, useAuthState } from "@/lib/auth-context";
+import { storeTenant, storedInvite, useAuthState } from "@/lib/auth-context";
 import { useMembership } from "@/lib/session";
 import type { Membership } from "@/lib/types";
 import { cn, roleLabel } from "@/lib/utils";
@@ -236,6 +236,8 @@ function ShellSkeleton() {
 
 function NoAccess({ subject, error }: { subject?: string; error: unknown }) {
   const auth = useAuthState();
+  // Rendered only on the client, once auth has resolved, so localStorage is available here.
+  const [invite] = useState(storedInvite);
   return (
     <div className="grid min-h-dvh place-items-center px-4">
       <div className="w-full max-w-md text-center">
@@ -252,7 +254,15 @@ function NoAccess({ subject, error }: { subject?: string; error: unknown }) {
           </Notice>
         )}
         {error ? <p className="mt-3 text-[12px] text-faint">{(error as Error).message}</p> : null}
-        <Button className="mt-6" onClick={() => auth.signOut()}>
+        {invite && (
+          <Link
+            href={`/invite/${invite}`}
+            className="mt-6 inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-[14px] font-medium text-brand-fg shadow-card hover:bg-brand-hover"
+          >
+            Continue your business invite
+          </Link>
+        )}
+        <Button className="mt-6 ml-2" onClick={() => auth.signOut()}>
           Sign out
         </Button>
       </div>
