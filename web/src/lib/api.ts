@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { createContext, useCallback, useContext } from "react";
 
 import { useAuthState } from "@/lib/auth-context";
 
@@ -26,12 +26,17 @@ function detail(body: unknown, status: number): string {
   return `Request failed (${status})`;
 }
 
-type Options = { method?: string; json?: unknown; form?: FormData; auth?: boolean };
+export type Options = { method?: string; json?: unknown; form?: FormData; auth?: boolean };
+export type ApiFn = <T>(path: string, opts?: Options) => Promise<T>;
+
+/** Replaces the workbench API for everything below it (the public onboarding facsimile). */
+export const ApiOverride = createContext<ApiFn | null>(null);
 
 /** A fetcher for the workbench API that adds whichever auth headers are in play. */
-export function useApi() {
+export function useApi(): ApiFn {
   const auth = useAuthState();
-  return useCallback(
+  const override = useContext(ApiOverride);
+  const real = useCallback(
     async <T,>(path: string, opts: Options = {}): Promise<T> => {
       const headers: Record<string, string> = opts.auth === false ? {} : await auth.authHeaders();
       let body: BodyInit | undefined;
@@ -54,6 +59,7 @@ export function useApi() {
     },
     [auth],
   );
+  return override ?? real;
 }
 
 function safeJson(text: string): unknown {
