@@ -5,6 +5,7 @@ import {
   Clock3,
   FileUp,
   Globe2,
+  Headset,
   Link2,
   Megaphone,
   Plug,
@@ -12,6 +13,7 @@ import {
   Star,
   Store,
   Type,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +32,8 @@ export const ITEM_ICONS: Record<string, LucideIcon> = {
   bank: Banknote,
   accounting: BookOpenCheck,
   sales: Store,
+  payroll: Users,
+  support_desk: Headset,
 };
 
 export const KIND_ICONS: Record<string, LucideIcon> = {

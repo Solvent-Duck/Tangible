@@ -3,6 +3,7 @@
     tangible-demo seed [--name demo] [--end-on DATE] [--store .evidence] [--work data/demo]
                        [--lines data/processed/uci_lines.csv] [--run-agent]
                        [--link-subject CLERK_USER_ID] [--link-analyst CLERK_USER_ID]
+                       [--only NAME ...] [--investigate NAME ...] [--no-pipeline]
     tangible-demo statements --tenant-id T --borrower NAME --out DIR [--month YYYY-MM]
                              [--account REF]
 
@@ -22,6 +23,7 @@ from tangible.demo.seed import (
     WORKBENCH_DEMO_URL,
     SeedError,
     seed_demo,
+    select_specs,
 )
 from tangible.demo.statements import (
     StatementError,
@@ -62,6 +64,17 @@ def main(argv: list[str] | None = None) -> None:
         "--run-agent", action="store_true",
         help="drive the staged cases with the live model (costs about $1.50 per case)",
     )  # fmt: skip
+    s.add_argument(
+        "--only", nargs="+", default=None, metavar="NAME",
+        help="seed only these borrowers (name prefix, e.g. juniper northgate)",
+    )  # fmt: skip
+    s.add_argument(
+        "--investigate", nargs="+", default=None, metavar="NAME",
+        help="with --run-agent, investigate these borrowers and leave them in review",
+    )  # fmt: skip
+    s.add_argument(
+        "--no-pipeline", action="store_true", help="skip the onboarding invites on the dashboard"
+    )
     st = sub.add_parser(
         "statements", help="write genuine, forged, edited and injection PDF statements"
     )
@@ -83,7 +96,8 @@ def main(argv: list[str] | None = None) -> None:
             name=args.name, end_on=args.end_on, store=args.store, work=args.work,
             lines=args.lines, run_agent=args.run_agent, base_url=args.base_url,
             link_subject=args.link_subject, link_analyst=args.link_analyst,
-            lender_name=args.lender_name,
+            lender_name=args.lender_name, specs=select_specs(args.only, args.investigate),
+            pipeline=not args.no_pipeline,
         )  # fmt: skip
     except SeedError as e:
         print(f"tangible-demo: {e}", file=sys.stderr)

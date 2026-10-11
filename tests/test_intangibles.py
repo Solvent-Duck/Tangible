@@ -334,6 +334,14 @@ def test_review_volume_vs_orders_flags_bought_reviews() -> None:
     assert run("review_volume_vs_orders", juniper) == []
 
 
+def test_review_volume_vs_orders_v3_is_v2_raised_as_a_hold() -> None:
+    (v2,) = run_check("review_volume_vs_orders", 2, northgate_ledger(400), AS_OF)
+    (v3,) = run_check("review_volume_vs_orders", 3, northgate_ledger(400), AS_OF)
+    assert (v2.severity, v3.severity, v3.check_version) == ("review", "hold", 3)
+    assert (v3.summary, v3.facts) == (v2.summary, v2.facts)
+    assert run_check("review_volume_vs_orders", 3, northgate_ledger(5000), AS_OF) == []
+
+
 def test_listing_identity_mismatch_on_a_confirmed_listing() -> None:
     data = {**listing_data("google_places", "Juniper & Rye"), "phone": "(503) 555-0199"}
     ledger = Ledger(applications=(app_of("juniper_rye"),),
@@ -792,7 +800,8 @@ def test_recorded_signal_reaches_the_ledger_and_metrics(ctx: ToolContext) -> Non
     got = call_tool(ctx, "compute_metric", {"key": "review_count"})
     assert got.error is None and got.result["value"] == "1152"
     chk = call_tool(ctx, "run_check", {"key": "review_volume_vs_orders"})
-    assert chk.error is None and chk.result["findings"][0]["severity"] == "review"
+    # Policy 0.7.0 runs v3 (cs-8): bought reviews are a hold.
+    assert chk.error is None and chk.result["findings"][0]["severity"] == "hold"
     # An analyst rejecting a match afterwards takes it out of the metrics.
     mid = ctx.conn.execute(
         "SELECT entity_match_id FROM public_signal WHERE source = 'yelp' AND case_id = %s",

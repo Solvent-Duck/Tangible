@@ -566,6 +566,7 @@ def seed_demo(
     link_subject: str | None = None,
     link_analyst: str | None = None,
     lender_name: str | None = None,
+    pipeline: bool = True,
 ) -> SeedSummary:
     if run_agent:
         # The model vendor is named only in agent/llm.py; here we just insist on a real backend
@@ -693,7 +694,30 @@ def seed_demo(
             )  # fmt: skip
         )
     # 4. the onboarding pipeline the lender dashboard shows (invites at every stage)
-    log("onboarding pipeline:")
-    seed_pipeline(settings, admin_p, log)
+    if pipeline:
+        log("onboarding pipeline:")
+        seed_pipeline(settings, admin_p, log)
     login = f"{base_url}/sign-in?tenant={tenant_id}"
     return SeedSummary(tenant_id, tenant_name, login, tuple(seeded), effective, requested)
+
+
+def select_specs(
+    only: list[str] | None, investigate: list[str] | None, specs: tuple[BorrowerSpec, ...] = SPECS
+) -> tuple[BorrowerSpec, ...]:
+    """The borrowers named in `only` (all when None), with those in `investigate` staged to
+    "review" (investigated by --run-agent, left for the analyst to sign). Names match a borrower
+    by case-insensitive prefix, e.g. "juniper"."""
+
+    def pick(name: str) -> BorrowerSpec:
+        hits = [sp for sp in specs if sp.name.lower().startswith(name.strip().lower())]
+        if len(hits) != 1:
+            raise SeedError(f"borrower {name!r} matches {len(hits)} demo borrowers, not one")
+        return hits[0]
+
+    chosen = list(specs) if only is None else [pick(n) for n in only]
+    to_review = {pick(n).name for n in investigate or []}
+    if missing := to_review - {sp.name for sp in chosen}:
+        raise SeedError(f"--investigate names a borrower not in --only: {sorted(missing)}")
+    return tuple(
+        dataclasses.replace(sp, stage="review") if sp.name in to_review else sp for sp in chosen
+    )

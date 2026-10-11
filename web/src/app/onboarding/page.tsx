@@ -411,6 +411,8 @@ const SCOPES: Record<string, string[]> = {
   sales: ["Orders", "Refunds", "Payouts"],
   inventory_system: ["Inventory levels and cost"],
   customers: ["Orders", "Customer ids (no contact details)"],
+  payroll: ["Payroll runs", "Headcount"],
+  support_desk: ["Tickets and resolution times"],
 };
 
 function ConnectorCard({ item }: { item: CoverageItem }) {

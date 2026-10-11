@@ -22,6 +22,7 @@ from tangible.demo.seed import (
     connection_story,
     connections_of,
     seed_demo,
+    select_specs,
     verify_story,
 )
 from tangible.policy import load_policy
@@ -387,3 +388,16 @@ def test_default_specs_have_distinct_identities_and_the_designed_connections() -
     # Names the web-lookup fixtures rely on (CCJ and charge from the lender; the director).
     assert by_name["Marlow Lane Interiors Ltd"].profile.lender_name == "FERNBANK FUNDING"
     assert by_name["Brightwell Crafts Ltd"].profile.owner_account == "J BRIGHTWELL PERSONAL"
+
+
+def test_select_specs_filters_by_prefix_and_stages_investigated_ones_to_review():
+    assert select_specs(None, None) == SPECS
+    picked = select_specs(["juniper", "Northgate"], ["northgate"])
+    assert [(sp.name, sp.stage) for sp in picked] == [
+        ("Juniper & Rye Bakery LLC", "open"),
+        ("Northgate Phone Repair LLC", "review"),
+    ]
+    with pytest.raises(SeedError, match="matches 0"):
+        select_specs(["nobody"], None)
+    with pytest.raises(SeedError, match="not in --only"):
+        select_specs(["juniper"], ["northgate"])

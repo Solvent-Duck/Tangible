@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Final
 
 from tangible import numfmt
-from tangible.checks.registry import FindingDraft, check
+from tangible.checks.registry import FindingDraft, Severity, check
 from tangible.intangibles.matching import address_similarity, phone_digits
 from tangible.ledger.types import Ledger
 from tangible.metrics.intangibles import listings, rating_inputs
@@ -77,12 +77,21 @@ def review_volume_vs_orders_v2(ledger: Ledger, as_of: datetime) -> list[FindingD
     return _review_volume_vs_orders(ledger, as_of, 2, numfmt.num, numfmt.num)
 
 
+@check("review_volume_vs_orders", 3)
+def review_volume_vs_orders_v3(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v2's check raised as a hold (check set cs-8): reviews out of all proportion to the
+    business's own orders mean its public reputation was bought, and a lender should not decide
+    until someone has looked. Same comparison, threshold and facts as v2."""
+    return _review_volume_vs_orders(ledger, as_of, 3, numfmt.num, numfmt.num, severity="hold")
+
+
 def _review_volume_vs_orders(
     ledger: Ledger,
     as_of: datetime,
     version: int,
     ratio_text: Callable[[Decimal], str],
     limit_text: Callable[[Decimal], str],
+    severity: Severity = "review",
 ) -> list[FindingDraft]:
     k = ledger.known(as_of)
     pairs = rating_inputs(k)
@@ -97,7 +106,7 @@ def _review_volume_vs_orders(
         FindingDraft(
             "review_volume_vs_orders",
             version,
-            "review",
+            severity,
             PILLAR,
             f"Matched listings show {reviews:f} reviews against {orders} orders in the ledger "
             f"({ratio_text(ratio)} reviews per order, above {limit_text(REVIEWS_PER_ORDER_MAX)}).",
