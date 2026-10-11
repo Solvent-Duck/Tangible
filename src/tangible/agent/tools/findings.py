@@ -42,7 +42,8 @@ def _cited(ctx: ToolContext, ids: list[str]) -> list[Any]:
 def _replaceable(ctx: ToolContext, raw: str) -> str:
     """The canonical id of an earlier finding this one may replace; raises ToolError otherwise.
 
-    Only the agent's own findings of this case, not already replaced. "Earlier" holds by
+    Only the agent's own findings of this case, not yet reviewed by an analyst, not already
+    replaced. "Earlier" holds by
     construction: the new row does not exist yet, so any finding found here predates it, whether
     from this run or a previous one."""
     try:
@@ -55,6 +56,17 @@ def _replaceable(ctx: ToolContext, raw: str) -> str:
     if row[0] != "model":
         raise ToolError(
             f"replaces: {old} is a rule finding; only findings you recorded can be replaced"
+        )
+    reviewed = ctx.conn.execute(
+        "SELECT action FROM underwriter_action WHERE finding_id = %s ORDER BY at DESC LIMIT 1",
+        (old,),
+    ).fetchone()
+    if reviewed is not None:
+        # Once an analyst has acted on a finding it is theirs: replacing it would drop an accepted
+        # hold from the policy inputs. Record a new finding instead and let the analyst decide.
+        raise ToolError(
+            f"replaces: {old} has been reviewed by an analyst ({reviewed[0]}); it cannot be "
+            "replaced. Record a new finding and say what it adds"
         )
     newer = ctx.conn.execute("SELECT id FROM finding WHERE replaces_id = %s", (old,)).fetchone()
     if newer is not None:

@@ -410,8 +410,16 @@ def test_replaces_rejected(ctx: ToolContext) -> None:
         case_id=ctx.case.id,
     )  # fmt: skip
 
+    accepted = record(ctx, [good.call_id], slug="accepted").result["finding_id"]
+    ctx.conn.execute(
+        "INSERT INTO underwriter_action (tenant_id, finding_id, user_id, action, reason) "
+        "VALUES (%s, %s, 'ana', 'accept', 'checked it')",
+        (ctx.case.tenant_id, accepted),
+    )
+
     unknown = "00000000-0000-4000-8000-000000000000"
     cases = {
+        "reviewed by an analyst": (accepted, "reviewed by an analyst (accept)"),
         "other case": (foreign, "not a finding of this case"),
         "rule finding": (rule, "rule finding"),
         "unknown id": (unknown, "not a finding of this case"),
@@ -428,7 +436,7 @@ def test_replaces_rejected(ctx: ToolContext) -> None:
     assert ok.result["finding_id"] in again.error  # points at what to replace instead
     # nothing from the rejected calls was stored
     keys = sorted(f.draft.check_key for f in load_findings(ctx.conn, case_id=ctx.case.id))
-    assert keys == ["agent:fix", "agent:mine", "some_rule"]
+    assert keys == ["agent:accepted", "agent:fix", "agent:mine", "some_rule"]
 
 
 def test_unverified_feedback_names_the_id_to_replace(ctx: ToolContext) -> None:
