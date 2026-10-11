@@ -191,6 +191,13 @@ def test_default_specs_are_the_designed_stories() -> None:
         "phantom_payouts",
     }
     assert by_name["Oakden Trading Ltd"].plants == ("partial_coverage",)
+    assert {s.name: s.stage for s in SPECS} == {
+        "Harbour & Pine Homeware Ltd": "open",
+        "Kestrel Gift Co Ltd": "signed",
+        "Marlow Lane Interiors Ltd": "signed",
+        "Brightwell Crafts Ltd": "review",
+        "Oakden Trading Ltd": "review",
+    }
     assert len({s.partition for s in SPECS}) == len(SPECS)  # one merchant each
     assert all(Decimal(25000) <= s.loan_amount <= Decimal(150000) for s in SPECS)
 

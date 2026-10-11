@@ -32,9 +32,12 @@ call fails.
 | 4 | Agent runs reliable on stage | Show investigation failures on the case page. Add an audited reset for cases stuck in `investigating`. Set Sonnet 4.5 prices in the demo config. Use Bedrock prompt caching. |
 | 5 | Pre-run fallbacks | Run the agent on every staged case ahead of time. Refresh `aws login` before the demo (it needs `botocore[crt]`). |
 
-**P0 status (Oct 10):** items 1–4 are merged on `demo-readiness` (`make check` 725 passed). Prompt
-caching is verified live (call 2 read all 4,146 cached tokens) and recorded on `model_call`
-(migration 0007). Item 5 waits on a paid `tangible-demo seed --run-agent` run.
+**P0 status (Oct 10):** done on `demo-readiness` (`make check` 729 passed).
+- **Pre-run:** tenant `demo-20261010-1948`, Sonnet 4.5. Total $2.70 for 4 cases ($0.34–$0.94 each). Prompt caching served 3.7M of the 3.9M input tokens.
+- **Plants:** the agent found every plant: the YRDEAL lender debit (verified), Amazon not connected, owner self-transfers and the payouts gap.
+- **Signed:** Marlow Lane at band C, limit £43,411.62 (band B on metrics, capped by its review findings).
+- **Fixed:** a verifier crash found in the pre-run (it would also have broken the case page).
+- **Still open:** most agent findings remain unverified because Sonnet computes percentages and differences in its head instead of with a tool (item 11).
 
 ## P1: show every feature
 
@@ -46,7 +49,8 @@ caching is verified live (call 2 read all 4,146 cached tokens) and recorded on `
 | 9 | Connections | The setup writes `connection` rows, including one revoked mid-review, so `stale_connection` and `revoked_mid_review` fire. |
 | 10 | Stated vs observed | The database loader hard-codes `applications=()`, so this check never fires. Needs an application table (migration 0007), or leave it out of the demo. |
 | 10b | `books_vs_processor` false review on clean data | When the last data day is around the 5th to 9th, the previous month is judged before its last payouts have settled. Every merchant trips this about 9–11 weeks a year. The seed works around it by moving `end_on` back up to 4 weeks. The real fix is a v2 that waits for settlement. |
-| 11 | No "all clean" findings | Prompt `investigate@v3`, or a separate "checked, nothing found" section. |
+| 11 | Prompt `investigate@v3` | (a) Compute every derived number (ratio, difference, %) with `run_analysis` before writing it, so it can be cited. In the pre-run, about 80% of unmatched numbers were this. (b) Don't record "all clean" findings, or show them in a separate "checked, nothing found" section. |
+| 11b | Decide: should an agent hold block the decision before review? | Policy knockout counts any open `hold`, including agent findings that are unverified and unreviewed. In the pre-run, Brightwell was knocked out by an unverified agent hold. Option: agent holds block only once an analyst accepts them (needs a new policy version). |
 
 ## P2: polish
 

@@ -84,6 +84,9 @@ class BorrowerSpec:
 # Partitions and seeds were picked by running the baseline over every partition: the clean
 # borrower stays free of review/hold findings, and each plant trips exactly its own check(s).
 # The seed re-asserts both on every run (the UK calendar shifts with `end_on`).
+# Stages with --run-agent: Harbour & Pine stays open for the live run; Marlow Lane is signed with a
+# band (review findings cap it at C); Kestrel is signed but knocked out by its rule hold; Brightwell
+# and Oakden wait in review for the analyst to review findings on stage.
 SPECS: Final[tuple[BorrowerSpec, ...]] = (
     BorrowerSpec("Harbour & Pine Homeware Ltd", 5, (), 101, Decimal("75000"), "open"),
     BorrowerSpec("Kestrel Gift Co Ltd", 2, ("hidden_reserve",), 102, Decimal("120000"), "signed"),
@@ -93,7 +96,7 @@ SPECS: Final[tuple[BorrowerSpec, ...]] = (
         ("undisclosed_lender_debit",),
         103,
         Decimal("40000"),
-        "review",
+        "signed",
     ),  # fmt: skip
     BorrowerSpec(
         "Brightwell Crafts Ltd",
@@ -101,7 +104,7 @@ SPECS: Final[tuple[BorrowerSpec, ...]] = (
         ("self_transfer_revenue", "phantom_payouts"),
         104,
         Decimal("90000"),
-        "signed",
+        "review",
     ),  # fmt: skip
     BorrowerSpec("Oakden Trading Ltd", 6, ("partial_coverage",), 105, Decimal("60000"), "review"),
 )
