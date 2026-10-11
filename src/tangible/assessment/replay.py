@@ -137,6 +137,10 @@ def replay(conn: Conn, assessment_id: str, policy_path: Path) -> ReplayReport:
             (assessment_id,),
         ).fetchall()
     ]
+    # The frozen set is exactly the assessment's items, which freeze built from the case's current
+    # findings; replaced findings were never items, so none are carried here. (A finding replaced
+    # after the freeze is still the frozen one, so items are not re-filtered for currency.)
+    # Assessments frozen before replacements existed have no replaced findings: unchanged.
     frozen_findings: list[StoredFinding] = []
     if ids:
         case_ids = {

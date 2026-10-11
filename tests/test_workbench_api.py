@@ -737,6 +737,76 @@ def test_unmatched_numbers_in_detail_and_trace(stack: Stack) -> None:
     assert not any("unmatched" in c for c in cols)
 
 
+def test_replaced_findings_are_listed_as_corrections(stack: Stack) -> None:
+    case_id = stack.new_case()
+    stack.drive(case_id)
+    base = f"/api/cases/{case_id}"
+    n_rule = len(stack.case(case_id)["findings"])
+    with tenant_session(stack.w.url, stack.w.tenant) as conn:
+        call_id = _insert_tool_call(conn, stack.w, case_id, {"series": "payouts"})
+        ids: list[str] = []
+        for i, (summary, verified) in enumerate(
+            (("payouts fell 42%", False), ("payouts fell 1%", False), ("payouts hold at 1", True))
+        ):
+            ids.append(
+                insert_finding(
+                    conn,
+                    stack.w.tenant,
+                    stack.w.borrower,
+                    FindingDraft(f"agent:p{i}", 1, "review", "integrity", summary),
+                    origin="model",
+                    case_id=case_id,
+                    tool_call_ids=[call_id],
+                    verified=verified,
+                    replaces_id=ids[-1] if ids else None,
+                )  # fmt: skip
+            )
+        lone = insert_finding(
+            conn, stack.w.tenant, stack.w.borrower,
+            FindingDraft("agent:lone", 1, "info", "health", "unrelated"),
+            origin="model", case_id=case_id, tool_call_ids=[call_id], verified=True,
+        )  # fmt: skip
+
+    detail = stack.case(case_id)
+    current = {f["id"]: f for f in detail["findings"]}
+    # the page list, and so the sign counts, hold current findings only
+    assert len(current) == n_rule + 2 and ids[2] in current and lone in current
+    assert ids[0] not in current and ids[1] not in current
+    top = current[ids[2]]
+    assert top["replaced"] is False and top["replaces_id"] == ids[1] and top["replaced_by"] is None
+    # corrections: nearest first, each marked replaced, unmatched numbers still shown
+    assert [c["id"] for c in top["corrections"]] == [ids[1], ids[0]]
+    assert all(c["replaced"] for c in top["corrections"])
+    assert top["corrections"][1]["unmatched_numbers"] == ["42%"]
+    assert top["corrections"][0]["replaced_by"] == ids[2]
+    assert current[lone]["corrections"] == [] and current[lone]["replaces_id"] is None
+
+    # the trace of a replaced finding still works and says it was replaced
+    t = stack.call("GET", f"{base}/findings/{ids[0]}/trace", "ana", 200).json()
+    assert t["finding"]["replaced"] is True and t["finding"]["replaced_by"] == ids[1]
+
+    # a replaced finding cannot be reviewed: its judgement belongs on the correction
+    r = stack.call(
+        "POST", f"{base}/findings/{ids[0]}/review", "ana", 409,
+        json={"action": "accept", "reason": "ok"},
+    )  # fmt: skip
+    assert ids[1] in r.json()["detail"]
+    stack.call(
+        "POST", f"{base}/findings/{ids[2]}/review", "ana", 200,
+        json={"action": "accept", "reason": "ok"},
+    )  # fmt: skip
+
+    # sign: the assessment carries current findings only; the replaced ones stay on file
+    aid = stack.call("POST", f"{base}/sign", "ana", 200).json()["assessment_id"]
+    got = stack.call("GET", f"/api/assessments/{aid}", "ana", 200).json()
+    in_assessment = {f["id"] for f in got["findings"]}
+    assert ids[2] in in_assessment and lone in in_assessment
+    assert not in_assessment & {ids[0], ids[1]}
+    assert all(f["replaced"] is False for f in got["findings"])
+    assert count(stack.w, "finding", f"id IN ('{ids[0]}', '{ids[1]}')") == 2
+    assert stack.call("POST", f"/api/assessments/{aid}/replay", "ana", 200).json()["match"]
+
+
 def test_cost_text_says_when_unpriced(stack: Stack) -> None:
     plan = {"business_model": "retailer", "risks": [], "notes": ""}
 

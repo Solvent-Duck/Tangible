@@ -33,6 +33,7 @@ from tangible.agent.verify import verify_numbers
 from tangible.assessment import freeze, record_override, replay
 from tangible.assessment.freeze import review_states
 from tangible.db.cases import Case, create_case, get_case, set_case_status
+from tangible.db.findings import replaced_by
 from tangible.db.session import Conn, tenant_session
 from tangible.documents.pending import ReadOutcome, pending_pulls, read_pending, source_ref_for
 from tangible.documents.upload import SOURCE as UPLOAD_SOURCE
@@ -304,7 +305,7 @@ def assign_analyst(conn: Conn, p: Principal, case_id: str, analyst_subject: str)
 
 _FINDING_COLS = (
     "id, check_key, check_version, origin, severity, direction, pillar, summary, evidence_refs, "
-    "tool_call_ids, verified, case_id"
+    "tool_call_ids, verified, case_id, replaces_id"
 )
 
 
@@ -346,6 +347,7 @@ def _finding_views(
         ).fetchall():
             acts[str(fid)].append({"action": action, "reason": reason, "by": user, "at": _j(at)})
     unmatched = _unmatched_numbers(conn, rows) if with_unmatched else {}
+    superseded_by = replaced_by(conn, ids)
     out = []
     for r in rows:
         body = r[8] if isinstance(r[8], dict) else {"refs": r[8], "facts": {}}
@@ -366,10 +368,33 @@ def _finding_views(
                 # None: not computed (verified, unchecked, or not a display that needs it)
                 "unmatched_numbers": unmatched.get(str(r[0])),
                 "case_id": str(r[11]) if r[11] else None,
+                # A corrected finding points at the earlier one it replaces. A replaced finding
+                # is not current: it feeds no count, freeze or policy input.
+                "replaces_id": str(r[12]) if r[12] else None,
+                "replaced": str(r[0]) in superseded_by,
+                "replaced_by": superseded_by.get(str(r[0])),
+                "corrections": [],
                 "review_state": states[str(r[0])],
                 "actions": acts[str(r[0])],
             }
         )
+    return out
+
+
+def _current_with_corrections(views: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The current (not replaced) findings of `views`, each carrying the findings it replaced
+    as `corrections`, nearest first (the finding it replaced, then the one that one replaced)."""
+    by_id = {f["id"]: f for f in views}
+    out = []
+    for f in views:
+        if f["replaced"]:
+            continue
+        chain: list[dict[str, Any]] = []
+        prev = by_id.get(f["replaces_id"]) if f["replaces_id"] else None
+        while prev is not None:
+            chain.append(prev)
+            prev = by_id.get(prev["replaces_id"]) if prev["replaces_id"] else None
+        out.append({**f, "corrections": chain})
     return out
 
 
@@ -382,8 +407,10 @@ def get_case_detail(
         "SELECT previous_case_id FROM case_file WHERE id = %s", (case.id,)
     ).fetchone()
     out["previous_case_id"] = str(prev[0]) if prev and prev[0] else None
-    out["findings"] = _finding_views(
-        conn, "case_id = %s", case.id, with_actions=True, with_unmatched=True
+    # Current findings only (the page list and sign counts read this); the ones a finding
+    # replaced ride along under it as `corrections`.
+    out["findings"] = _current_with_corrections(
+        _finding_views(conn, "case_id = %s", case.id, with_actions=True, with_unmatched=True)
     )
     aid = _assessment_id_for_case(conn, case.id)
     out["assessments"] = [_assessment_summary(conn, aid)] if aid else []
@@ -731,6 +758,9 @@ def review_finding(
     ).fetchone()
     if row is None:
         raise NotFound(f"finding {finding_id} not found in case {case_id}")
+    if newer := replaced_by(conn, [finding_id]).get(finding_id):
+        # It no longer counts toward anything; the analyst's judgement belongs on the correction.
+        raise Conflict(f"finding {finding_id} was replaced by finding {newer}; review that one")
     conn.execute(
         "INSERT INTO underwriter_action (tenant_id, finding_id, user_id, action, reason) "
         "VALUES (%s, %s, %s, %s, %s)",
