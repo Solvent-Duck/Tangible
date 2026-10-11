@@ -28,3 +28,4 @@ button { padding:.25rem .7rem; cursor:pointer; } button:disabled { cursor:not-al
 .unpriced { font-style:italic; }
 .meta, small { color:var(--muted); }
 .raw { border-left:4px solid var(--fg); }
+.wrap-up { white-space: pre-wrap; }

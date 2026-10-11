@@ -241,7 +241,15 @@ def test_scripted_run_end_to_end(hw: World, tmp_path: Path) -> None:
             "AND object_id = %s",
             (case.id,),
         ).fetchall()
-        assert audit == [("agent", {"stop_reason": "end_turn", "steps": 4, "cost_usd": "0.000000"})]
+        assert audit == [
+            (
+                "agent",
+                {
+                    "stop_reason": "end_turn", "steps": 4, "cost_usd": "0.000000",
+                    "wrap_up": "Plan risks covered.",
+                },
+            )
+        ]  # fmt: skip
         # 1 plan call + 4 investigation turns
         assert conn.execute(
             "SELECT count(*) FROM model_call WHERE prompt_key = 'investigate'"

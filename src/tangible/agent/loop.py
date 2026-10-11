@@ -32,6 +32,9 @@ from tangible.policy import Policy
 
 PROMPT_VERSIONS = {"system": "v1", "investigate": "v3", "plan": "v2"}
 
+# The closing message is stored on the investigation_stopped audit row, capped at this length.
+WRAP_UP_MAX_CHARS = 4000
+
 # After this many consecutive steps whose tool calls all failed, the loop asks for a wrap-up.
 STALL_STEPS = 3
 WRAP_UP_NOTICE = (
@@ -302,6 +305,7 @@ def investigate(
     steps = 0
     model_id = ""
     stop_reason = "end_turn"
+    wrap_up = ""  # the model's closing message, kept for the analyst (unverified prose)
     stalled = 0  # consecutive steps whose tool calls all failed
     notified: set[str] = set()  # wrap-up notices already sent: "budget", "stall"
     while True:
@@ -316,6 +320,7 @@ def investigate(
         model_id = resp.model_id or model_id
         if not resp.tool_calls:
             stop_reason = "end_turn"
+            wrap_up = resp.text.strip()[:WRAP_UP_MAX_CHARS]
             break
         blocks: list[dict[str, Any]] = []
         if resp.text:
@@ -362,7 +367,10 @@ def investigate(
         (
             case.tenant_id,
             case.id,
-            json.dumps({"stop_reason": stop_reason, "steps": steps, "cost_usd": str(cost)}),
+            json.dumps(
+                {"stop_reason": stop_reason, "steps": steps, "cost_usd": str(cost)}
+                | ({"wrap_up": wrap_up} if wrap_up else {})
+            ),
         ),
     )
     set_case_status(conn, case.id, "review")

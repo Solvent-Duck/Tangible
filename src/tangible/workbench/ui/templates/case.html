@@ -45,6 +45,7 @@
 </section>
 {% endif %}
 {% if c.last_investigation or c.usage.model_calls %}<p>{% if c.last_investigation %}Last investigation stopped: {{ c.last_investigation.stop_reason }} ({{ c.last_investigation.at }}). {% endif %}Model calls: {{ c.usage.model_calls }}, {% if c.usage.model_calls and not c.usage.priced %}<span class="unpriced">{{ c.usage.cost_text }}</span>{% else %}cost {{ c.usage.cost_text }}{% endif %}.</p>{% endif %}
+{% if c.last_investigation and c.last_investigation.wrap_up %}<details open><summary>Agent's wrap-up (the agent's own words; numbers here are not verified, the findings below are what count)</summary><p class="wrap-up">{{ c.last_investigation.wrap_up }}</p></details>{% endif %}
 {% endif %}
 
 <section aria-labelledby="m-h">

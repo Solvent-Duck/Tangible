@@ -466,3 +466,21 @@ def test_cost_says_not_priced_when_prices_are_zero(stack: Stack) -> None:  # noq
     post(stack, f"/cases/{other}/plan", "ana")
     page = ui(stack, "GET", f"/cases/{other}", "ana", 200).text
     assert "cost $0.001050" in page and "not priced" not in page
+
+
+def test_agent_wrap_up_is_shown_escaped(stack: Stack) -> None:  # noqa: F811
+    case_id = make_case(stack)
+    with tenant_session(stack.w.url, stack.w.tenant) as conn:
+        conn.execute(
+            "INSERT INTO audit_log (tenant_id, actor, action, object_kind, object_id, detail) "
+            "VALUES (%s, 'agent', 'investigation_stopped', 'case', %s, %s::jsonb)",
+            (
+                stack.w.tenant, case_id,
+                json.dumps({"stop_reason": "end_turn", "steps": 3, "cost_usd": "0.1",
+                            "wrap_up": f"Checked, nothing found: payables. {SCRIPT}"}),
+            ),
+        )  # fmt: skip
+    page = ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
+    assert "Agent&#39;s wrap-up" in page or "Agent's wrap-up" in page
+    assert "Checked, nothing found: payables." in page
+    assert SCRIPT not in page
