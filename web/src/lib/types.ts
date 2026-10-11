@@ -175,6 +175,7 @@ export type CaseRow = {
   as_of: string;
   status: string;
   assigned_analyst: string | null;
+  assigned_analyst_name?: string | null;
   previous_case_id: string | null;
   assessment: { id: string; band: string; limit: string | null } | null;
 };
@@ -322,6 +323,7 @@ export type Workspace = Partial<RunNotices> & {
   budget_steps: number;
   budget_usd: string;
   assigned_analyst: string | null;
+  assigned_analyst_name?: string | null;
   status: string;
   previous_case_id: string | null;
   findings: Finding[];

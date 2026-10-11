@@ -160,7 +160,7 @@ function HeroVisual() {
         </div>
       </div>
       <div className="absolute -bottom-10 -left-6 hidden rounded-xl border border-line bg-surface px-4 py-3 shadow-pop sm:block">
-        <p className="text-[11.5px] text-faint">Policy 0.5.0 · capped at C by open reviews</p>
+        <p className="text-[11.5px] text-faint">Policy 0.7.0 · capped at C by open reviews</p>
         <p className="flex items-center gap-2 text-[14px] font-semibold">
           <span className="grid size-6 place-items-center rounded-md bg-brand text-[12px] text-brand-fg">C</span>
           Suggested limit $60,000.00

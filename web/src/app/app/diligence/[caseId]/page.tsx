@@ -116,7 +116,7 @@ export default function CasePage() {
             </span>
             <span>As of {date(c.as_of, true)}</span>
             {c.loan_amount && <span>Loan {money(c.loan_amount)}</span>}
-            <span>Analyst {c.assigned_analyst ?? "unassigned"}</span>
+            <span>Analyst {c.assigned_analyst_name ?? c.assigned_analyst ?? "unassigned"}</span>
             {c.previous_case_id && (
               <Link href={`/app/diligence/${c.previous_case_id}`} className="text-brand hover:underline">
                 Re-based from {shortId(c.previous_case_id)}

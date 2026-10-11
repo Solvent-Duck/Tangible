@@ -166,7 +166,9 @@ def test_analyst_sees_only_assigned_cases(stack: Stack) -> None:
     stack.call("GET", f"/api/cases/{theirs}", "ana", 403)
     stack.call("POST", f"/api/cases/{theirs}/plan", "ana", 403)
     stack.call("POST", f"/api/cases/{theirs}/sign", "ana", 403)
-    stack.case(mine)
+    # Pages show the analyst's display name, not the subject (a bare Clerk user id when hosted).
+    assert stack.call("GET", "/api/cases", "ana", 200).json()[0]["assigned_analyst_name"] == "Ana"
+    assert stack.case(mine)["assigned_analyst_name"] == "Ana"
 
 
 def test_only_credit_admin_creates_and_assigns(stack: Stack) -> None:
