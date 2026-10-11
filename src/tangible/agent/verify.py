@@ -1,6 +1,17 @@
 """Number verifier: every numeric claim in agent text must appear in the cited tool results.
 
 Pure, no I/O. The agent never invents a number; this is the check that enforces it.
+
+Not treated as claims (masked before extraction), because they are labels, not results:
+- UUIDs, tool-call ids, ISO and slash dates, clock times, list markers.
+- Window and period phrases: a number directly followed by a time unit, with an optional
+  hyphen or space ("90 days", "30-day", "13-week", "prior 25 weeks", "12 months", "trailing 90d",
+  "5 business days", "2 quarters", "1 yr"), and statistical widths ("2 sigma", "2σ",
+  "2 standard deviations").
+- Digits inside snake_case identifier tokens ("change_30v30", "slope_13w", "revenue_yoy_90d").
+Money and counts followed by other words ("21 debits", "305 SKUs") are still claims.
+
+Signs are ignored when matching: a claim of 16.5% matches a cited -0.165 (and vice versa).
 """
 
 import re
@@ -30,6 +41,19 @@ _MASKS = (
 )
 
 _NUM = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+_TIME_UNIT = (
+    r"(?:business[ \t]+days?|days?|weeks?|wks?|months?|mo|years?|yrs?|quarters?"
+    r"|sigma|σ|standard[ \t]+deviations?)"
+)
+_NO_PREFIX = r"(?<![\w.£$€])"
+
+# Window / period / sigma phrases and identifier tokens that carry digits.
+_LABEL_MASKS = (
+    re.compile(rf"{_NO_PREFIX}(?:{_NUM})[ \t-]?{_TIME_UNIT}(?!\w)", re.IGNORECASE),
+    re.compile(rf"{_NO_PREFIX}(?:{_NUM})[dw](?!\w)", re.IGNORECASE),  # 90d, 13w
+    re.compile(r"\b(?=[A-Za-z0-9_]*\d)[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b"),
+)
+
 _CLAIM = re.compile(
     rf"(?<![\w.])(?P<cur>(?:[£$€]|GBP\s?|USD\s?|EUR\s?))?(?P<num>{_NUM})"
     r"(?P<suf>%|[kKmM](?![\w]))?(?![\w])"
@@ -46,7 +70,7 @@ class _Claim:
 
 
 def _mask(text: str) -> str:
-    for pat in _MASKS:
+    for pat in (*_MASKS, *_LABEL_MASKS):
         text = pat.sub(lambda m: " " * len(m.group(0)), text)
     return text
 
@@ -109,6 +133,7 @@ def _round(v: Decimal, places: int) -> Decimal:
 
 
 def _matches(c: _Claim, x: Decimal) -> bool:
+    x = abs(x)  # sign-insensitive: "declining 16.5%" matches a cited -0.165
     if c.pct:
         return _round(x * 100, c.places) == c.value or _round(x, c.places) == c.value
     if c.scale != 1:
