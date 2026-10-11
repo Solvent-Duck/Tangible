@@ -90,9 +90,13 @@ function Hero() {
             <em className="text-brand">not just the bank statement.</em>
           </h1>
           <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-muted">
-            Invite a borrower, and Tangible connects their bank, books, sales and inventory, reads what
-            the public web says about them, and hands your underwriter a signed report where every
-            number traces back to the raw line it came from.
+            About 2 million US small businesses apply for credit every year, and fewer than half get
+            everything they ask for. Approve 5% more of them, around 100,000 businesses, at loans of up
+            to $100,000, and that&apos;s up to <span className="font-medium text-ink">$10 billion a year</span>{" "}
+            in new lending.
+          </p>
+          <p className="mt-2 text-[12px] text-faint">
+            Estimate from the Federal Reserve Small Business Credit Survey and US Census business counts.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
