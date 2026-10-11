@@ -95,6 +95,16 @@ class Stress:
 
 
 @dataclass(frozen=True)
+class Report:
+    """Optional (0.6.0+). How the evaluator writes figures into the rules it reports: money in
+    `currency` to the cent, other numbers to `decimals` places. Wording only; every comparison
+    uses the exact values. Without it, figures are written as before (plain Decimal text)."""
+
+    currency: str
+    decimals: int
+
+
+@dataclass(frozen=True)
 class PolicySpec:
     version: str
     metric_set: str
@@ -105,6 +115,7 @@ class PolicySpec:
     limit: LimitRule
     uplift: Uplift | None = None  # absent in 0.2.x / 0.3.0 files
     stress: Stress | None = None  # absent before 0.5.0
+    report: Report | None = None  # absent before 0.6.0
 
 
 def _mapping(
@@ -238,13 +249,23 @@ def _stress(v: Any) -> Stress:
     return Stress(floor, tuple(rules))
 
 
+def _report(v: Any) -> Report:
+    path = "policy.report"
+    m = _mapping(v, path, {"currency", "decimals"})
+    if m["currency"] != "USD":
+        raise ValueError(f"{path}.currency: only 'USD' is supported")
+    if m["decimals"] != 2 or isinstance(m["decimals"], bool):
+        raise ValueError(f"{path}.decimals: only 2 is supported")
+    return Report("USD", 2)
+
+
 def parse_policy(spec: Any) -> PolicySpec:
     top = _mapping(
         spec,
         "policy",
         {
             "version", "metric_set", "check_set", "knockout", "bands", "review_findings",
-            "limit", "uplift", "stress",
+            "limit", "uplift", "stress", "report",
         },
         {"version", "metric_set", "check_set", "knockout", "bands", "review_findings", "limit"},
     )  # fmt: skip
@@ -324,4 +345,5 @@ def parse_policy(spec: Any) -> PolicySpec:
         limit=limit,
         uplift=_uplift(top["uplift"]) if "uplift" in top else None,
         stress=_stress(top["stress"]) if "stress" in top else None,
+        report=_report(top["report"]) if "report" in top else None,
     )

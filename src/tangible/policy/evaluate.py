@@ -6,11 +6,12 @@ condition holds when ``value >= min``.
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
+from tangible import numfmt
 from tangible.checks.registry import Severity
 from tangible.policy.loader import Policy
 from tangible.policy.review import ReviewState
@@ -57,8 +58,26 @@ def _result_hash(band: str | None, limit: Decimal | None, rules: list[dict[str, 
 _FAILED_OP = {">=": "<", "<=": ">"}
 
 
+@dataclass(frozen=True)
+class _Words:
+    """How figures are written into rules. Policies without a `report` block keep plain Decimal
+    text, so assessments frozen under them replay to the same rules; 0.6.0+ write dollars to
+    the cent and other numbers to two decimals. Comparisons always use the exact values."""
+
+    num: Callable[[Decimal], str]
+    money: Callable[[Decimal], str]
+
+
+_PLAIN = _Words(str, str)
+_REPORT = _Words(numfmt.num, numfmt.usd)
+
+
 def _uplift(
-    up: Uplift, band: str, metrics: Mapping[str, Decimal | None], rules: list[dict[str, str]]
+    up: Uplift,
+    band: str,
+    metrics: Mapping[str, Decimal | None],
+    rules: list[dict[str, str]],
+    w: _Words,
 ) -> str:
     """Lift `band` by at most one notch, never above the ceiling, when any enabled route's
     conditions all hold. Every route is recorded with the values it saw, including why it did
@@ -85,7 +104,7 @@ def _uplift(
     for route in up.routes:
         conds = up.conditions(route)
         thresholds = "; ".join(
-            f"{c.metric} {op} {thr}"
+            f"{c.metric} {op} {w.num(thr)}"
             for c in conds
             for op, thr in (("<=", c.max), (">=", c.min))
             if thr is not None
@@ -112,11 +131,13 @@ def _uplift(
                     continue
                 if value is None:
                     missing = True
-                    parts.append(f"{c.metric} none (needs {op} {thr})")
+                    parts.append(f"{c.metric} none (needs {op} {w.num(thr)})")
                     continue
                 ok = value <= thr if op == "<=" else value >= thr
                 failed = failed or not ok
-                parts.append(f"{c.metric} {value} {op if ok else _FAILED_OP[op]} {thr}")
+                parts.append(
+                    f"{c.metric} {w.num(value)} {op if ok else _FAILED_OP[op]} {w.num(thr)}"
+                )
         outcome = "not_evaluated" if missing else ("fail" if failed else "pass")
         saw = "; ".join(parts)
         entry = {
@@ -177,6 +198,7 @@ def evaluate(
     else:
         spec = policy
     rules: list[dict[str, str]] = []
+    w = _PLAIN if spec.report is None else _REPORT
 
     def done(band: str | None, limit: Decimal | None) -> PolicyResult:
         return PolicyResult(
@@ -275,19 +297,19 @@ def evaluate(
                 if thr is None:
                     continue
                 entry = {
-                    "rule": f"band {br.band}: {c.metric} {op} {thr}",
+                    "rule": f"band {br.band}: {c.metric} {op} {w.num(thr)}",
                     "step": "band",
                     "band": br.band,
                     "metric": c.metric,
                     "op": op,
-                    "threshold": str(thr),
+                    "threshold": w.num(thr),
                 }
                 if value is None:
                     entry.update(saw="none", outcome="not_evaluated", status="not_evaluated")
                     satisfied = False
                 else:
                     ok = value <= thr if op == "<=" else value >= thr
-                    entry.update(saw=str(value), outcome="pass" if ok else "fail")
+                    entry.update(saw=w.num(value), outcome="pass" if ok else "fail")
                     satisfied = satisfied and ok
                 rules.append(entry)
         if satisfied:
@@ -305,7 +327,7 @@ def evaluate(
     # 2b. uplift (0.4.0+): after bands, before the review cap. A knockout returned above, so it
     # never runs after one. Policies without the key produce exactly the rules they always did.
     if spec.uplift is not None:
-        band = _uplift(spec.uplift, band, metrics, rules)
+        band = _uplift(spec.uplift, band, metrics, rules, w)
 
     # 3. review cap
     cap = spec.review_findings.cap_band_at
@@ -342,12 +364,12 @@ def evaluate(
     short = hist is None or hist < lim.history.min_days
     rules.append(
         {
-            "rule": f"limit: history {lim.history.metric} >= {lim.history.min_days}",
+            "rule": f"limit: history {lim.history.metric} >= {w.num(lim.history.min_days)}",
             "step": "limit",
             "metric": lim.history.metric,
             "op": ">=",
-            "threshold": str(lim.history.min_days),
-            "saw": "none" if hist is None else str(hist),
+            "threshold": w.num(lim.history.min_days),
+            "saw": "none" if hist is None else w.num(hist),
             "outcome": "short_history" if short else "pass",
         }
     )
@@ -358,18 +380,18 @@ def evaluate(
     limit = min(raw, cap_amt).quantize(_CENT, rounding=ROUND_HALF_UP)
     rules.append(
         {
-            "rule": f"limit: {share} x {lim.base_metric}, max {cap_amt}",
+            "rule": f"limit: {w.num(share)} x {lim.base_metric}, max {w.money(cap_amt)}",
             "step": "limit",
-            "saw": str(base),
+            "saw": w.money(base),
             "op": "share*base,max",
-            "threshold": str(cap_amt),
+            "threshold": w.money(cap_amt),
             "outcome": "capped_at_max" if raw > cap_amt else "computed",
         }
     )
 
     # 5. stressed limit (0.5.0+): may only reduce the limit; never touches the band.
     if spec.stress is not None:
-        limit = _stress(spec.stress, limit, metrics, rules)
+        limit = _stress(spec.stress, limit, metrics, rules, w)
     return done(band, limit)
 
 
@@ -378,6 +400,7 @@ def _stress(
     limit: Decimal,
     metrics: Mapping[str, Decimal | None],
     rules: list[dict[str, str]],
+    w: _Words,
 ) -> Decimal:
     for i, r in enumerate(stress.rules):
         saw, missing, ok = [], [], True
@@ -392,13 +415,15 @@ def _stress(
                     continue
                 holds = value <= thr if op == "<=" else value >= thr
                 ok = ok and holds
-                saw.append(f"{c.metric} {value} {op if holds else _FAILED_OP[op]} {thr}")
+                saw.append(
+                    f"{c.metric} {w.num(value)} {op if holds else _FAILED_OP[op]} {w.num(thr)}"
+                )
         if missing:
             rules.append(
                 {
                     "rule": f"stress rule {i + 1}: not evaluated, missing {', '.join(missing)}",
                     "step": "stress", "saw": "none", "op": "all",
-                    "threshold": f"x{r.limit_factor}",
+                    "threshold": f"x{w.num(r.limit_factor)}",
                     "outcome": "not_evaluated", "status": "not_evaluated",
                 }
             )  # fmt: skip
@@ -408,9 +433,12 @@ def _stress(
             stressed = (limit * factor).quantize(_CENT, rounding=ROUND_HALF_UP)
             rules.append(
                 {
-                    "rule": f"stressed limit {limit}\u2192{stressed} (x{factor}): {'; '.join(saw)}",
+                    "rule": (
+                        f"stressed limit {w.money(limit)}\u2192{w.money(stressed)} "
+                        f"(x{w.num(factor)}): {'; '.join(saw)}"
+                    ),
                     "step": "stress", "saw": "; ".join(saw), "op": "x",
-                    "threshold": str(factor), "outcome": "reduced",
+                    "threshold": w.num(factor), "outcome": "reduced",
                 }
             )  # fmt: skip
             return stressed
@@ -418,13 +446,13 @@ def _stress(
             {
                 "rule": f"stress rule {i + 1}: {'; '.join(saw)}",
                 "step": "stress", "saw": "; ".join(saw), "op": "all",
-                "threshold": f"x{r.limit_factor}", "outcome": "fail",
+                "threshold": f"x{w.num(r.limit_factor)}", "outcome": "fail",
             }
         )  # fmt: skip
     rules.append(
         {
             "rule": "stress: no rule fired; limit unchanged",
-            "step": "stress", "saw": str(limit), "op": "x", "threshold": "1",
+            "step": "stress", "saw": w.money(limit), "op": "x", "threshold": "1",
             "outcome": "unchanged",
         }
     )  # fmt: skip

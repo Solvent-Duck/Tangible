@@ -155,7 +155,7 @@ function Wizard() {
   const go = (n: number) => setStep(STEPS[Math.max(0, Math.min(STEPS.length - 1, n))].id);
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[260px_1fr]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="lg:sticky lg:top-8 lg:self-start">
         <p className="text-[13px] text-muted">{s.lender_name} · {s.loan_amount ? money(s.loan_amount) : "loan application"}</p>
         <h1 className="mt-1 text-[22px] leading-tight font-semibold tracking-tight">{s.business_name}</h1>
@@ -262,7 +262,7 @@ function ProfileStep({
     (profile?.import_mix ?? []).map((x) => ({
       hs_chapter: x.hs_chapter,
       country: x.country,
-      share: String(Math.round(Number(x.share_of_cogs) * 1000) / 10),
+      share: String(Math.round(Number(x.share_of_cogs) * 10000) / 100),
     })),
   );
   const importMix = !askImports
@@ -328,7 +328,7 @@ function ProfileStep({
             <Input id="address" value={f.address} onChange={set("address")} placeholder="212 Main St, Portland" />
           </Field>
           <Field label="Revenue, last 90 days" hint="your estimate" htmlFor="rev">
-            <Input id="rev" inputMode="decimal" value={f.stated_revenue_90d} onChange={set("stated_revenue_90d")} placeholder="$120,000" />
+            <Input id="rev" inputMode="decimal" value={f.stated_revenue_90d} onChange={set("stated_revenue_90d")} placeholder="$120,000.00" />
           </Field>
           {askImports && (
             <ImportsEditor rows={imports} setRows={setImports} none={noImports} setNone={setNoImports} />

@@ -140,13 +140,13 @@ function HeroVisual() {
         </ol>
         <div className="mt-5 space-y-2.5">
           <MockFinding
-            tone="hold"
-            title="Payouts of $18,420 never reached the business account"
-            meta="payouts_vs_deposits v2 · verified"
+            tone="review"
+            title="Payouts of $18,420.00 never reached the business account"
+            meta="payouts_vs_deposits v1 · verified"
           />
           <MockFinding
             tone="review"
-            title="Recurring $1,250 debit to an undisclosed lender since June"
+            title="Recurring $1,250.00 debit to an undisclosed lender since June"
             meta="unexplained_recurring_debit v1 · verified"
           />
           <MockFinding tone="info" title="Repeat customers: 41% of orders over 90 days" meta="repeat_customer_share v1" />
@@ -156,10 +156,10 @@ function HeroVisual() {
         </div>
       </div>
       <div className="absolute -bottom-10 -left-6 hidden rounded-xl border border-line bg-surface px-4 py-3 shadow-pop sm:block">
-        <p className="text-[11.5px] text-faint">Policy 0.3.0</p>
+        <p className="text-[11.5px] text-faint">Policy 0.5.0 · capped at C by open reviews</p>
         <p className="flex items-center gap-2 text-[14px] font-semibold">
-          <span className="grid size-6 place-items-center rounded-md bg-brand text-[12px] text-brand-fg">B</span>
-          Suggested limit $60,000
+          <span className="grid size-6 place-items-center rounded-md bg-brand text-[12px] text-brand-fg">C</span>
+          Suggested limit $60,000.00
         </p>
       </div>
     </div>
@@ -187,8 +187,8 @@ function MockFinding({ tone, title, meta }: { tone: "hold" | "review" | "info"; 
 
 function ProofStrip() {
   const items = [
-    ["23", "versioned metrics"],
-    ["17", "integrity checks"],
+    ["39", "versioned metrics"],
+    ["22", "integrity checks"],
     ["100%", "of numbers traceable to a raw line"],
     ["0", "numbers set by the model"],
   ];

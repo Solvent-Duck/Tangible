@@ -32,7 +32,7 @@ import { ApiError, useApi } from "@/lib/api";
 import { EVENT_LABELS, STAGE_TONE, providerLabel, stageLabel } from "@/lib/labels";
 import { useMembership } from "@/lib/session";
 import type { CoverageItem, InviteDetail } from "@/lib/types";
-import { ago, date, money } from "@/lib/utils";
+import { ago, date, money, pct } from "@/lib/utils";
 
 const LINK = /https?:\/\/\S+\/invite\/[A-Za-z0-9_-]+/;
 
@@ -125,7 +125,7 @@ export default function InvitePage() {
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-6">
           <Checklist items={d.items} />
           <ProfileCard d={d} />
@@ -254,7 +254,7 @@ function ProfileCard({ d }: { d: InviteDetail }) {
                   : p.import_mix.length === 0
                     ? "None"
                     : p.import_mix
-                        .map((x) => `HS ${x.hs_chapter} from ${x.country}: ${Math.round(Number(x.share_of_cogs) * 100)}%`)
+                        .map((x) => `HS ${x.hs_chapter} from ${x.country}: ${pct(x.share_of_cogs)}`)
                         .join("; ")
               }
             />

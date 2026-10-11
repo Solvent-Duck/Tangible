@@ -39,7 +39,7 @@ from tangible.db.session import Conn
 from tangible.evidence.store import EvidenceStore
 from tangible.policy import Policy
 
-PROMPT_VERSIONS = {"system": "v1", "investigate": "v4", "plan": "v3"}
+PROMPT_VERSIONS = {"system": "v1", "investigate": "v5", "plan": "v3"}
 
 # The closing message is stored on the investigation_stopped audit row, capped at this length.
 WRAP_UP_MAX_CHARS = 4000

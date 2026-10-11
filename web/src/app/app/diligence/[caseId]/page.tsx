@@ -738,7 +738,7 @@ function RunCard({ c }: { c: Workspace }) {
         <dt className="text-muted">Step budget</dt>
         <dd className="tabular text-right">{c.budget_steps}</dd>
         <dt className="text-muted">Cost budget</dt>
-        <dd className="tabular text-right">${c.budget_usd}</dd>
+        <dd className="tabular text-right">{money(c.budget_usd)}</dd>
         {c.usage && (
           <>
             <dt className="text-muted">Model calls</dt>

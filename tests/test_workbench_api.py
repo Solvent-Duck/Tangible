@@ -816,7 +816,7 @@ def test_cost_text_says_when_unpriced(stack: Stack) -> None:
         )
 
     case_id = stack.new_case()
-    assert stack.case(case_id)["usage"]["cost_text"] == "$0"  # no model calls: nothing to flag
+    assert stack.case(case_id)["usage"]["cost_text"] == "$0.00"  # no model calls: nothing to flag
     set_client(stack, scripted)
     stack.call("POST", f"/api/cases/{case_id}/plan", "ana", 201)
     u = stack.case(case_id)["usage"]
@@ -831,4 +831,4 @@ def test_cost_text_says_when_unpriced(stack: Stack) -> None:
     set_client(stack, scripted)
     stack.call("POST", f"/api/cases/{case_id}/plan", "ana", 201)
     u = stack.case(case_id)["usage"]
-    assert u["priced"] is True and u["cost_text"] == "$0.001050"
+    assert u["priced"] is True and u["cost_usd"] == "0.001050" and u["cost_text"] == "<$0.01"

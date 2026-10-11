@@ -36,11 +36,10 @@ def test_released_prompts_are_pinned() -> None:
     assert {f.name.removesuffix(".md") for f in files} == set(PROMPT_HASHES)
 
 
-def test_investigate_v4_is_the_latest_and_teaches_verification() -> None:
+def test_investigate_v4_teaches_verification() -> None:
     p = load_prompt("investigate", 4)
     assert p.key == "investigate" and p.version == 4
     assert p.sha256 == PROMPT_HASHES["investigate@v4"] and len(p.sha256) == 64
-    assert latest("investigate") == p
     for needle in ("run_analysis", "query_ledger", "record_finding", "UNVERIFIED", "hold"):
         assert needle in p.text
     assert "Checked, nothing found" in p.text
@@ -78,3 +77,14 @@ def test_plan_v3_adds_the_standing_external_risk() -> None:
         assert needle in v3.text
     assert "untrusted" in v3.text and "may not be available" in v3.text
     assert "External standing" not in v2.text  # released v2 is untouched
+
+
+def test_investigate_v5_is_the_latest_and_writes_dollars_to_two_decimals() -> None:
+    v4, v5 = load_prompt("investigate", 4), load_prompt("investigate", 5)
+    assert latest("investigate") == v5 and v5.sha256 == PROMPT_HASHES["investigate@v5"]
+    assert "GBP 136,831.84" in v4.text and "80.2%" in v4.text  # released, unchanged
+    assert "$136,831.84" in v5.text and "80.24%" in v5.text and "18.17 months" in v5.text
+    assert "GBP" not in v5.text.replace("never write GBP", "")
+    # everything else is v4's
+    for needle in ("run_analysis", "query_ledger", "record_finding", "UNVERIFIED", "`replaces`"):
+        assert needle in v5.text

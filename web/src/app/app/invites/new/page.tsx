@@ -106,7 +106,7 @@ export default function NewInvitePage() {
         description="Choose what you want beyond standard financials. The business gets one secure link to connect and upload everything."
       />
       <form
-        className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_460px]"
+        className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_460px]"
         onSubmit={(e) => {
           e.preventDefault();
           send.mutate();
@@ -126,7 +126,7 @@ export default function NewInvitePage() {
                 <Input id="contact" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Rosa Martinez" autoComplete="off" />
               </Field>
               <Field label="Loan amount" hint="optional" htmlFor="amount">
-                <Input id="amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$75,000" />
+                <Input id="amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$75,000.00" />
               </Field>
               <Field label="Personal note" hint="optional, shown in the email" htmlFor="message" className="sm:col-span-2">
                 <Textarea id="message" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Thanks for considering us. This replaces the usual statement chase." />

@@ -2,11 +2,12 @@
 
 from bisect import bisect_left
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Final
 
+from tangible import numfmt
 from tangible.checks.calendar_uk import is_business_day
 from tangible.checks.registry import FindingDraft, Severity, check
 from tangible.ledger.evidence import EvidenceRef
@@ -164,6 +165,23 @@ def partial_coverage(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     they are inferred from Payout.processor values (payouts are the only other sign of which
     processors are connected).
     """
+    return _partial_coverage(ledger, as_of, 1, str, lambda x: f"{x:.1%}", lambda x: f"{x:.0%}")
+
+
+@check("partial_coverage", 2)
+def partial_coverage_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check, written in dollars with shares to two decimals (check set cs-7)."""
+    return _partial_coverage(ledger, as_of, 2, numfmt.usd, numfmt.pct, numfmt.pct)
+
+
+def _partial_coverage(
+    ledger: Ledger,
+    as_of: datetime,
+    version: int,
+    money: Callable[[Decimal], str],
+    share_text: Callable[[Decimal], str],
+    limit_text: Callable[[Decimal], str],
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     names = [c.source for c in k.connections] or [p.processor for p in k.payouts]
     connected: set[str] = set()
@@ -189,13 +207,14 @@ def partial_coverage(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     return [
         FindingDraft(
             check_key="partial_coverage",
-            check_version=1,
+            check_version=version,
             severity="hold",
             pillar="integrity",
             summary=(
-                f"{amount} of {total} in bank inflows over the last {COVERAGE_WINDOW_DAYS} days "
-                f"({share:.1%}) came from {', '.join(per_kw)}, which the borrower has not "
-                f"connected; the limit is {COVERAGE_MAX_UNCONNECTED_SHARE:.0%}."
+                f"{money(amount)} of {money(total)} in bank inflows over the last "
+                f"{COVERAGE_WINDOW_DAYS} days ({share_text(share)}) came from "
+                f"{', '.join(per_kw)}, which the borrower has not connected; the limit is "
+                f"{limit_text(COVERAGE_MAX_UNCONNECTED_SHARE)}."
             ),
             evidence_refs=_refs(t.evidence for t in unconnected),
             facts={
@@ -308,6 +327,18 @@ def time_gaps_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     when that chance is < GAP2_REVIEW_P or it lasts >= GAP2_REVIEW_RUN business days; anything
     less is info. Silence after a source's last row is staleness (stale_connection), not a gap.
     """
+    return _time_gaps(ledger, as_of, 2, lambda x: f"{x:.4%}")
+
+
+@check("time_gaps", 3)
+def time_gaps_v3(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v2's check with the chance of no rows to two decimals (check set cs-7)."""
+    return _time_gaps(ledger, as_of, 3, numfmt.pct)
+
+
+def _time_gaps(
+    ledger: Ledger, as_of: datetime, version: int, chance_text: Callable[[Decimal], str]
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     last = as_of.date() - timedelta(days=1)
     drafts: list[FindingDraft] = []
@@ -364,14 +395,14 @@ def time_gaps_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
         drafts.append(
             FindingDraft(
                 check_key="time_gaps",
-                check_version=2,
+                check_version=version,
                 severity=severity,
                 pillar="integrity",
                 summary=(
                     f"{table} has no rows on {len(gaps)} business day(s) in the last "
                     f"{GAP_WINDOW_DAYS} days where rows were expected. Worst: {span} "
                     f"({len(worst)} day(s); chance of no rows by luck "
-                    f"{worst_chance:.4%})."
+                    f"{chance_text(worst_chance)})."
                 ),
                 evidence_refs=refs,
                 facts={

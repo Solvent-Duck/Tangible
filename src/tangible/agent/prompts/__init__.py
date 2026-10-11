@@ -19,6 +19,7 @@ PROMPT_HASHES: dict[str, str] = {
     "investigate@v3": "dbef6fa9632b06456f19152dfe6ac346943b8e961bebbf80dfa613a8179a43c8",
     "plan@v3": "9447b3fce53d38167b313695c64015dd2bf42546c2fd8cd95d2e503ed3e9ab30",
     "investigate@v4": "c2740d9539deab8df01f19c78327042f0ea2ae0489c83d8ebcb48808b0a259b9",
+    "investigate@v5": "fbcc7fb753802a307b9344df08b480292ad0283336b77968e45aab446201cb80",
     "search_presence@v1": "f0df2501ec69ee6b2ad584bdc160b48aea9ffa249d29edc1f91e4a5bf05089ae",
     "search_loyalty@v1": "84b4337cb9c2ca7cc70bb7d357d6dede7c66c525342b386aaf70cf9ad86d5913",
     "search_reputation@v1": "1b11571f6475d800f04dc7ecab0bdae53f0ba0c3b28a9fe7fcbfbaac1bdd5095",

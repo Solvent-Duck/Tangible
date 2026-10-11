@@ -85,6 +85,30 @@ def test_plant_is_caught(synthetic_ledger, plant: str) -> None:
         assert result.band is not None and result.band >= "C"  # review cap applies
 
 
+@pytest.mark.parametrize("plant", ["", *sorted(EXPECTED)])
+def test_cs7_finds_what_cs6_finds_and_writes_it_in_dollars(synthetic_ledger, plant: str) -> None:
+    """cs-7's checks are cs-6's with new wording: same findings, severities, facts and evidence;
+    summaries in dollars and to two decimals. cs-6 texts stay as frozen assessments hold them."""
+    ledger = synthetic_ledger(plant={plant} - {""})
+    as_of = as_of_for(ledger)
+
+    def run(set_id: str) -> list[FindingDraft]:
+        return [f for key, v in check_set(set_id) for f in run_check(key, v, ledger, as_of)]
+
+    def same(f: FindingDraft) -> tuple[object, ...]:
+        return (f.check_key, f.severity, f.pillar, f.evidence_refs, dict(f.facts))
+
+    old, new = run("cs-6"), run("cs-7")
+    assert [same(f) for f in new] == [same(f) for f in old]
+    for f in new:
+        assert "GBP" not in f.summary and "£" not in f.summary, f.summary
+    for o, n in zip(old, new, strict=True):
+        if "GBP " in o.summary:
+            assert "$" in n.summary and n.summary != o.summary
+    if plant:
+        assert any("$" in f.summary for f in new if f.check_key == EXPECTED[plant][0])
+
+
 @pytest.mark.parametrize("days", [184, 187, 213])
 def test_books_vs_processor_v2_does_not_judge_a_month_before_it_settles(
     synthetic_ledger, days: int

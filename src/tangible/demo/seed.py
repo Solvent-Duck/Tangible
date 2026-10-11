@@ -340,7 +340,7 @@ class SeedSummary:
             plants = ", ".join(b.plants) or "none (clean)"
             lines += [
                 f"{b.name}",
-                f"  case {b.case_id}  stage {b.stage}  loan GBP {b.loan_amount:,.0f}",
+                f"  case {b.case_id}  stage {b.stage}  loan ${b.loan_amount:,.2f}",
                 f"  plants: {plants}",
                 f"  data {b.first_day} to {b.last_day} (shifted {b.shift_days} days)",
                 "  connections: " + "; ".join(b.connections),

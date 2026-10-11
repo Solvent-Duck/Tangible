@@ -95,7 +95,7 @@ def test_backtest_summarises_the_fixture(
         out = stack.call("GET", "/api/backtest", who, 200).json()
     s = out["summary"]
     assert out["problem"] is None and s["synthetic"] is True
-    assert s["plants"]["catch_rate"] == "100.0%" and s["plants"]["planted"] == "13"
+    assert s["plants"]["catch_rate"] == "100.00%" and s["plants"]["planted"] == "13"
     assert s["false_alarms"]["per_clean_loan"] == "0.17"
     assert s["replay"]["all_match"] is True and s["replay"]["matched"] == "20"
     assert s["time_leak"]["clean"] is True

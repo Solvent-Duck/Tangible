@@ -4,17 +4,18 @@ Summaries and facts contain only numbers and our own identifiers, never text cop
 document, so nothing a borrower writes reaches a finding.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Final
 
+from tangible import numfmt
 from tangible.checks.registry import FindingDraft, check
 from tangible.ledger.evidence import EvidenceRef
 from tangible.ledger.types import Ledger, Statement
 
 DATE_TOLERANCE_DAYS: Final = 1  # a statement line matches a bank row within this many days
-BALANCE_TOLERANCE: Final = Decimal(1)  # GBP, opening/closing vs account_balance
+BALANCE_TOLERANCE: Final = Decimal(1)  # currency units, opening/closing vs account_balance
 MAX_FONT_FAMILIES: Final = 3  # distinct base fonts beyond this is unlike a bank's template
 MAX_EVIDENCE: Final = 50
 
@@ -71,11 +72,23 @@ def document_mismatch(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
     if none does and the feed has exactly one account, that account is used. Lines match
     one-to-one on direction, exact amount and date within +/-1 day. A statement line with no
     bank match, a bank row inside [period_start, period_end] absent from the statement, or an
-    opening/closing balance differing by more than 1 GBP from the end-of-day account_balance
+    opening/closing balance differing by more than 1.00 from the end-of-day account_balance
     on the day before period_start / on period_end (skipped when no such row) is a hold.
     If the account cannot be matched, or the feed has no rows for it in the period, the
     statement cannot be verified: info.
     """
+    return _document_mismatch(ledger, as_of, 1, lambda x: f"{x:.2f}")
+
+
+@check("document_mismatch", 2)
+def document_mismatch_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's check, with the balance tolerance written in dollars (check set cs-7)."""
+    return _document_mismatch(ledger, as_of, 2, numfmt.usd)
+
+
+def _document_mismatch(
+    ledger: Ledger, as_of: datetime, version: int, money: Callable[[Decimal], str]
+) -> list[FindingDraft]:
     k = ledger.known(as_of)
     accounts = {t.account_ref for t in k.bank_txns}
     out: list[FindingDraft] = []
@@ -94,7 +107,7 @@ def document_mismatch(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
             why = "no bank account matches" if account is None else "no bank rows in the period"
             out.append(
                 FindingDraft(
-                    "document_mismatch", 1, "info", "integrity",
+                    "document_mismatch", version, "info", "integrity",
                     f"Statement {st.source_ref} could not be checked: {why}.",
                     _refs([st.evidence]),
                     facts={"statement": st.source_ref, "reason": why},
@@ -168,14 +181,17 @@ def document_mismatch(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
             facts[f"{label}_stated"] = str(stated)
             facts[f"{label}_ledger"] = str(bal[0])
             if abs(stated - bal[0]) > BALANCE_TOLERANCE:
-                problems.append(f"{label} balance differs from the ledger by more than 1.00")
+                problems.append(
+                    f"{label} balance differs from the ledger by more than "
+                    f"{money(BALANCE_TOLERANCE)}"
+                )
                 evidence.append(bal[1])
         if not problems:
             continue
         evidence += [t.evidence for t in in_period if t not in missing_rows]
         out.append(
             FindingDraft(
-                "document_mismatch", 1, "hold", "integrity",
+                "document_mismatch", version, "hold", "integrity",
                 f"Statement {st.source_ref} disagrees with the bank feed: " + "; ".join(problems)
                 + ".",
                 _refs(evidence), facts=facts,

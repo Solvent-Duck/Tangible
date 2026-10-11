@@ -240,7 +240,7 @@ def test_scripted_run_end_to_end(hw: World, tmp_path: Path, engine: str) -> None
         )
         res = run(conn, case, client, tmp_path)
         assert res.stop_reason == "end_turn" and res.steps == 4
-        assert res.prompt_versions == {"system": "v1", "investigate": "v4", "plan": "v3"}
+        assert res.prompt_versions == {"system": "v1", "investigate": "v5", "plan": "v3"}
         assert res.model_id == "scripted-1"
         assert len(res.finding_ids) == 1 and res.unverified_finding_ids == []
         (f,) = [f for f in load_findings(conn, case_id=case.id) if f.origin == "model"]
@@ -320,7 +320,7 @@ def finding_call(summary: str, slug: str, cid: str) -> Step:
     )
 
 
-def test_loop_uses_investigate_v4_and_plan_v3(hw: World, tmp_path: Path) -> None:
+def test_loop_uses_investigate_v5_and_plan_v3(hw: World, tmp_path: Path) -> None:
     with tenant_session(hw.url, hw.tenant) as conn:
         case = approved_case(conn, hw)
         # approved_case proposed the plan: that call is logged with plan@v3 and its sha
@@ -330,13 +330,13 @@ def test_loop_uses_investigate_v4_and_plan_v3(hw: World, tmp_path: Path) -> None
         ).fetchone() == ("3", v3.sha256)
         client = ScriptedClient([say("done")])
         res = run(conn, case, client, tmp_path)
-        assert res.prompt_versions["investigate"] == "v4"
-        v4 = load_prompt("investigate", 4)
-        assert v4.text in client.calls[0].system
+        assert res.prompt_versions["investigate"] == "v5"
+        v5 = load_prompt("investigate", 5)
+        assert v5.text in client.calls[0].system
         row = conn.execute(
             "SELECT prompt_version, prompt_sha256 FROM model_call WHERE prompt_key = 'investigate'"
         ).fetchone()
-        assert row == ("4", v4.sha256)
+        assert row == ("5", v5.sha256)
 
 
 def test_first_message_names_the_borrower_and_lists_current_findings_only(

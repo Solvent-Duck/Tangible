@@ -44,7 +44,7 @@ class Order:
     observed_at: datetime
     customer_ref: str | None = None
     channel: str | None = None
-    currency: str = "GBP"
+    currency: str = "USD"
     evidence: EvidenceRef | None = None
 
 

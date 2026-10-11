@@ -43,10 +43,10 @@ def build_report(result: BacktestResult) -> dict[str, Any]:
 
 
 def _pct(x: float | None) -> str:
-    return "n/a" if x is None else f"{x * 100:.1f}%"
+    return "n/a" if x is None else f"{x * 100:.2f}%"
 
 
-def _num(x: float | None, nd: int = 3) -> str:
+def _num(x: float | None, nd: int = 2) -> str:
     return "n/a" if x is None else f"{x:.{nd}f}"
 
 
@@ -77,14 +77,15 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines += _table(
         ["loans", "defaulted", "repaid", "default rate", "with a band", "loan amount", "loss"],
         [[str(c["loans"]), str(c["defaulted"]), str(c["repaid"]), _pct(c["default_rate"]),
-          str(c["with_band"]), f"{c['total_loan_amount']:,.2f}", f"{c['total_loss_amount']:,.2f}"]],
+          str(c["with_band"]), f"${c['total_loan_amount']:,.2f}",
+          f"${c['total_loss_amount']:,.2f}"]],
     )  # fmt: skip
 
     lines += ["## Loss by band", "", "Band `none` means a hold finding blocked a decision.", ""]
     lines += _table(
         ["band", "loans", "defaults", "default rate", "loan amount", "loss amount"],
         [[b, str(v["count"]), str(v["defaults"]), _pct(v["default_rate"]),
-          f"{v['loan_amount']:,.2f}", f"{v['loss_amount']:,.2f}"]
+          f"${v['loan_amount']:,.2f}", f"${v['loss_amount']:,.2f}"]
          for b, v in s["loss_by_band"].items() if v["count"]],
     )  # fmt: skip
 
@@ -164,9 +165,9 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"Spread: {a['spread']}; loans with identical band across runs: "
             f"{_pct(a['loans_all_runs_agree'])}; pairwise band agreement: "
             f"{_pct(a['pairwise_band_agreement'])}.",
-            f"Cost per case: ${_num(a['cost_per_case_usd'], 4)} "
-            f"(total ${_num(a['total_cost_usd'], 4)}); "
-            f"steps per case: {_num(a['steps_per_case'], 1)}.",
+            f"Cost per case: ${_num(a['cost_per_case_usd'])} "
+            f"(total ${_num(a['total_cost_usd'])}); "
+            f"steps per case: {_num(a['steps_per_case'])}.",
             "",
         ]
     return "\n".join(lines)

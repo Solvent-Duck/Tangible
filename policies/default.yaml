@@ -1,9 +1,16 @@
 # Default policy. Each lender gets its own copy; the lender's credit team owns it.
 # Steps run in order: knockout -> bands -> uplift -> review cap -> limit -> stress. Thresholds are
 # starting guesses; tune on the backtest. max/min are inclusive.
-version: "0.5.0"
+version: "0.6.0"
 metric_set: ms-4
-check_set: cs-6
+# (0.6.0) cs-7: the cs-6 checks, with findings written in dollars and to two decimals.
+check_set: cs-7
+
+# (0.6.0) How figures are written into the rules this policy reports: money in dollars to the
+# cent, other numbers to two decimals. Wording only; every comparison uses the exact values.
+report:
+  currency: USD
+  decimals: 2
 
 knockout:
   # A hold finding in these review states blocks a decision.

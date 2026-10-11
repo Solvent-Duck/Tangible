@@ -29,7 +29,7 @@ The stages shown are derived from `invite_event` rows, never stored: `invited â†
 | Email | Outbox only (`outbound_email`). Set `TANGIBLE_SMTP_URL=smtp://127.0.0.1:1025` to also deliver to a local Mailpit. |
 | Connecting a source | Simulated. Consent is recorded as a `connection` row (source, read-only scopes, granted now); no data is pulled. The real connectors (`tangible.connectors`, Plaid and Rutter) can take over from that row once Plaid Link and Rutter Link are wired into the page. |
 | Intangibles items (presence, reputation, longevity, community) | Shown to the lender. The profile's identity fields feed the search agents' entity matching; the ms-3 metrics score public signals, and policy 0.4.0 can lift a band one notch at most. Links the business adds are not yet read by the agents. |
-| Imported goods | Real. The stated import mix goes into the `application` row and drives the tariff stress (ms-4, policy 0.5.0 stressed limit). |
+| Imported goods | Real. The stated import mix goes into the `application` row and drives the tariff stress (ms-4, the policy's stressed limit). |
 
 ## Data
 

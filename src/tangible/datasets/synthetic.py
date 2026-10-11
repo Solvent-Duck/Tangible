@@ -55,10 +55,10 @@ PLANT_DESCRIPTIONS: Final[dict[str, str]] = {
         "4-6 days after normal settlement."
     ),
     "undisclosed_lender_debit": (
-        "Fixed GBP 450.00 debit to YRDEAL CAPITAL on every business day, with no matching invoice."
+        "Fixed $450.00 debit to YRDEAL CAPITAL on every business day, with no matching invoice."
     ),
     "self_transfer_revenue": (
-        "Weekly round-amount transfers (GBP 5,000-9,000) from the owner's personal account, "
+        "Weekly round-amount transfers ($5,000.00-$9,000.00) from the owner's personal account, "
         "labelled SALES TRANSFER, booked as sales."
     ),
     "partial_coverage": (
@@ -608,7 +608,7 @@ def _record_invoice(
 
 
 def _add_wholesale(out: _Out, sales: _Sales, cal: _Cal, rng: random.Random) -> None:
-    """Orders of GBP 500 or more: receivable invoices paid by transfer after 14-30 days."""
+    """Orders of $500.00 or more: receivable invoices paid by transfer after 14-30 days."""
     for w in sales.wholesale:
         due = _roll(w.issued + timedelta(days=TERMS_DAYS))
         on_time = rng.random() < RECEIVABLE_ON_TIME_P
@@ -932,7 +932,7 @@ def _settle_owner(out: _Out, cal: _Cal, opening: Decimal, profile: Profile) -> N
     """Owner cash flows, simulated day by day from the opening balance.
 
     When cash would fall under the floor (a restock squeeze) the owner lends the company enough
-    to clear it, in round GBP 5,000 amounts. At each month end the owner draws 60% of the cash
+    to clear it, in round $5,000.00 amounts. At each month end the owner draws 60% of the cash
     above the working-capital buffer. Plants are already in `out.txns`.
     """
     net: defaultdict[date, Decimal] = defaultdict(Decimal)

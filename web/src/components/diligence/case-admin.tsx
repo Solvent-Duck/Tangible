@@ -107,7 +107,7 @@ export function CaseAdmin() {
                     <Input id="asof" type="datetime-local" value={f.as_of} onChange={set("as_of")} required />
                   </Field>
                   <Field label="Loan" hint="optional" htmlFor="loan">
-                    <Input id="loan" inputMode="decimal" value={f.loan_amount} onChange={set("loan_amount")} placeholder="$50,000" />
+                    <Input id="loan" inputMode="decimal" value={f.loan_amount} onChange={set("loan_amount")} placeholder="$50,000.00" />
                   </Field>
                 </div>
               </>

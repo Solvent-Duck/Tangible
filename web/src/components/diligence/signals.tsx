@@ -3,9 +3,8 @@ import { Globe2, Ship } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import type { FeedLine, PublicSignalRow, Systemic } from "@/lib/types";
-import { humanize } from "@/lib/utils";
+import { humanize, num, pct } from "@/lib/utils";
 
-const pct = (v: string | number) => `${Math.round(Number(v) * 100)}%`;
 
 /** Public source results the search agents scored; the match score is entity_match's, not the agent's. */
 export function PublicSignals({ rows }: { rows: PublicSignalRow[] }) {
@@ -45,7 +44,7 @@ export function PublicSignals({ rows }: { rows: PublicSignalRow[] }) {
                   )}
                   {r.registered_on && <p className="text-[12px] text-faint">domain registered {r.registered_on}</p>}
                 </td>
-                <td className="tabular px-3 py-2.5 text-right">{Number(r.score).toFixed(2)}</td>
+                <td className="tabular px-3 py-2.5 text-right">{num(r.score)}</td>
                 <td className="px-3 py-2.5">
                   {r.on_file ? (
                     <Badge tone="info">recorded</Badge>

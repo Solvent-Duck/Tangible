@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Empty, Notice, Skeleton } from "@/components/ui/misc";
 import { ApiError, useApi } from "@/lib/api";
 import type { Assessment } from "@/lib/types";
-import { cn, date, money } from "@/lib/utils";
+import { cn, date, money, numeric } from "@/lib/utils";
 
 const BAND: Record<string, string> = {
   A: "bg-ok text-white",
@@ -158,8 +158,8 @@ export default function AssessmentPage() {
                       <Badge tone="neutral">{String(r.step)}</Badge>
                     </td>
                     <td className="px-3 py-2.5">{r.rule}</td>
-                    <td className="px-3 py-2.5 font-mono text-[12px]">{r.saw === undefined ? "–" : String(r.saw)}</td>
-                    <td className="px-3 py-2.5 font-mono text-[12px]">{r.op ? `${r.op} ${String(r.threshold)}` : "–"}</td>
+                    <td className="px-3 py-2.5 font-mono text-[12px]">{numeric(r.saw)}</td>
+                    <td className="px-3 py-2.5 font-mono text-[12px]">{r.op ? `${r.op} ${numeric(r.threshold)}` : "–"}</td>
                     <td className="px-3 py-2.5">
                       <Badge tone={OUTCOME[r.outcome] ?? "neutral"}>{r.outcome}</Badge>
                     </td>

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Empty, Notice, Skeleton } from "@/components/ui/misc";
 import { useApi } from "@/lib/api";
+import { humanize } from "@/lib/utils";
 
 type Summary = {
   synthetic: boolean;
@@ -64,7 +65,11 @@ export default function BacktestPage() {
       {q.data && !s && (
         <Card>
           <Empty icon={<ChartColumn />} title="No backtest report yet">
-            <p>{q.data.problem}</p>
+            <p>
+              {q.data.problem === "missing"
+                ? `Nothing at ${q.data.report_path}. Generate one on the synthetic cohort:`
+                : `${humanize(q.data.problem)}. Regenerate it:`}
+            </p>
             <code className="mt-2 block font-mono text-[12px]">{q.data.hint}</code>
           </Empty>
         </Card>

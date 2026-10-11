@@ -17,8 +17,8 @@ and rdap_lookup through the ordinary logged tools. Every number still comes from
 provider's clock is pinned to the case's as_of: in a live case the pulls happen after the case
 is opened and, by the time rule, only count once the case is re-based to a later as_of.
 
-Not wired into `tangible-demo seed` (its borrowers are UK, GBP and generated from UK order
-lines); call this on a case of your own. See docs/intangibles-plan.md, "v1 slice".
+Not wired into `tangible-demo seed` (its borrowers are generated from UK order lines); call
+this on a case of your own. See docs/intangibles-plan.md, "v1 slice".
 """
 
 from collections.abc import Callable

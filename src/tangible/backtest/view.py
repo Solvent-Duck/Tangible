@@ -67,15 +67,15 @@ def _num(v: Any) -> float | None:
 
 def pct(v: Any) -> str:
     x = _num(v)
-    return "n/a" if x is None else f"{x * 100:.1f}%"
+    return "n/a" if x is None else f"{x * 100:.2f}%"
 
 
 def money(v: Any) -> str:
     x = _num(v)
-    return "n/a" if x is None else f"{x:,.2f}"
+    return "n/a" if x is None else f"-${-x:,.2f}" if x < 0 else f"${x:,.2f}"
 
 
-def dec(v: Any, nd: int = 3) -> str:
+def dec(v: Any, nd: int = 2) -> str:
     x = _num(v)
     return "n/a" if x is None else f"{x:.{nd}f}"
 
