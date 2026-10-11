@@ -53,6 +53,8 @@ class Settings:
     # Test-only: permit http:// issuer/endpoints. Deliberately not readable from the environment.
     oidc_allow_insecure_http: bool = False
     secret_store: SecretStore = field(default_factory=EnvSecrets, repr=False)
+    # Hosted dev-auth demos only: one shared password (HTTP Basic) in front of everything.
+    access_password: str | None = field(default=None, repr=False)
 
     @property
     def auth_mode(self) -> str:
@@ -92,6 +94,7 @@ class Settings:
             session_secret=env.get("TANGIBLE_SESSION_SECRET") or None,
             session_hours=float(env.get("TANGIBLE_SESSION_HOURS", "8")),
             cookie_secure=_opt_bool(env.get("TANGIBLE_COOKIE_SECURE")),
+            access_password=env.get("TANGIBLE_ACCESS_PASSWORD") or None,
             pricing=Pricing(
                 Decimal(env.get("TANGIBLE_PRICE_IN_PER_MTOK", "0")),
                 Decimal(env.get("TANGIBLE_PRICE_OUT_PER_MTOK", "0")),
