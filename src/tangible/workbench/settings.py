@@ -61,7 +61,7 @@ class Settings:
         env = os.environ
         return cls(
             database_url=database_url(),
-            evidence_dir=Path(env.get("TANGIBLE_EVIDENCE_DIR", "var/evidence")),
+            evidence_dir=Path(env.get("TANGIBLE_EVIDENCE_DIR", ".evidence")),
             policy_path=Path(env.get("TANGIBLE_POLICY_PATH", str(_DEFAULT_POLICY))),
             dev_auth=env.get("TANGIBLE_DEV_AUTH") == "1",
             oidc_issuer=env.get("TANGIBLE_OIDC_ISSUER") or None,
