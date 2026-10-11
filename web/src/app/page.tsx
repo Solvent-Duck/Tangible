@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { NavAuth } from "@/components/auth/nav-auth";
 import { Logo } from "@/components/logo";
 
 export default function Landing() {
@@ -57,9 +58,7 @@ function Nav() {
           <a href="#businesses" className="hover:text-ink">For businesses</a>
         </nav>
         <div className="flex items-center gap-2">
-          <Link href="/sign-in" className="rounded-lg px-3 py-2 text-[14px] font-medium text-muted hover:text-ink">
-            Sign in
-          </Link>
+          <NavAuth />
           <a
             href="mailto:hello@tangible.test?subject=Tangible%20demo"
             className="hidden rounded-lg bg-brand px-4 py-2 text-[14px] font-medium text-brand-fg shadow-card hover:bg-brand-hover sm:inline-flex"

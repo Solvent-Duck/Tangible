@@ -80,6 +80,40 @@
         "3000"
       ],
       "port": 3000
+    },
+    {
+      "name": "api-clerk",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TANGIBLE_AUTH_MODE=clerk",
+        "TANGIBLE_CLERK_ISSUER=https://neat-krill-697.clerk.accounts.dev",
+        "TANGIBLE_CLERK_AUTHORIZED_PARTIES=http://localhost:3000",
+        "TANGIBLE_EVIDENCE_DIR=.evidence",
+        "TANGIBLE_WEB_PROVIDER=fixtures",
+        "TANGIBLE_PUBLIC_URL=http://localhost:3000",
+        "TANGIBLE_PORT=8011",
+        "uv",
+        "run",
+        "tangible-workbench"
+      ],
+      "port": 8011
+    },
+    {
+      "name": "web-clerk",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "TANGIBLE_API_URL=http://127.0.0.1:8011",
+        "NEXT_PUBLIC_AUTH_MODE=clerk",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3000"
+      ],
+      "port": 3000
     }
   ]
 }
