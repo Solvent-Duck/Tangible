@@ -33,6 +33,8 @@ _WS = re.compile(r"\s+")
 _CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _DECIMAL = re.compile(r"-?\d{1,14}(\.\d{1,2})?")
+# A reply that is exactly one markdown code fence around the JSON (Claude models often add one).
+_FENCED = re.compile(r"```(?:json)?[ \t]*\n(?P<body>.*)\n[ \t]*```", re.DOTALL)
 
 
 class ExtractionError(ValueError):
@@ -80,8 +82,12 @@ def _text(v: Any, what: str, limit: int) -> str:
 
 def parse_reply(text: str) -> dict[str, Any]:
     """Strictly validate the model's reply into plain schema fields (dates/Decimals parsed)."""
+    body = text.strip()
+    fenced = _FENCED.fullmatch(body)
+    if fenced is not None:
+        body = fenced["body"]
     try:
-        obj = json.loads(text.strip())
+        obj = json.loads(body)
     except (ValueError, RecursionError) as e:
         raise ExtractionError("reply is not a single JSON object") from e
     if not isinstance(obj, dict):
