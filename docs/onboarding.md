@@ -90,10 +90,7 @@ Open http://localhost:3000 and sign in as a demo credit admin (run `make demo` f
 
 ## Deploying
 
-- **Two services:** the API (root `Dockerfile`) and the web app (`web/Dockerfile`, Next standalone).
-- **Build-time values:** the web image bakes in `TANGIBLE_API_URL` and the `NEXT_PUBLIC_*` values at build time.
-- **Invite links:** set `TANGIBLE_PUBLIC_URL` on the API to the web app's URL, so links point at it.
-- **Password gate:** the shared-password gate (`TANGIBLE_ACCESS_PASSWORD`) guards the API only. It does not suit the web app, which needs public `/invite/*` pages, so use Clerk for a hosted demo.
+See [deploy.md](deploy.md): Railway services, variables, getting demo data in, and checks.
 
 ## Not done
 
