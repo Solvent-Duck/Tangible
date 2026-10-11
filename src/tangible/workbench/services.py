@@ -44,7 +44,7 @@ from tangible.ledger.evidence import EvidenceRef
 from tangible.policy import load_policy
 from tangible.web.provider import WebProvider
 from tangible.workbench import audit
-from tangible.workbench.auth import Principal
+from tangible.workbench.auth import STAFF_ROLES, Principal
 from tangible.workbench.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -179,8 +179,15 @@ def _case_for_assessment(conn: Conn, assessment_id: str) -> str | None:
     return str(row[0]) if row and row[0] else None
 
 
+def _staff_only(p: Principal) -> None:
+    """Borrower accounts see their own onboarding only: never a case, finding or assessment."""
+    if p.role not in STAFF_ROLES:
+        raise Forbidden("not available to borrower accounts")
+
+
 def _readable_case(conn: Conn, p: Principal, case_id: str) -> Case:
     """Analysts: their assigned cases. Lender roles: only cases that have been signed."""
+    _staff_only(p)
     case = _load_case(conn, case_id)
     if p.role == "analyst":
         if case.assigned_analyst != p.subject:
@@ -226,6 +233,7 @@ def _case_row(case: Case) -> dict[str, Any]:
 
 
 def list_cases(conn: Conn, p: Principal) -> list[dict[str, Any]]:
+    _staff_only(p)
     cols = "c.id, c.borrower_id, b.name, c.as_of, c.status, c.assigned_analyst, c.previous_case_id"
     if p.role == "analyst":
         rows = conn.execute(
@@ -1030,6 +1038,7 @@ def _assessment_summary(conn: Conn, assessment_id: str) -> dict[str, Any]:
 
 
 def _readable_assessment(conn: Conn, p: Principal, assessment_id: str) -> None:
+    _staff_only(p)
     if conn.execute("SELECT 1 FROM assessment WHERE id = %s", (assessment_id,)).fetchone() is None:
         raise NotFound(f"assessment {assessment_id} not found")
     if p.role == "analyst":

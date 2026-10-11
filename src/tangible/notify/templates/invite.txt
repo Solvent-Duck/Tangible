@@ -1,0 +1,23 @@
+Hello{% if contact_name %} {{ contact_name }}{% endif %},
+
+{{ lender_name }} has invited {{ business_name }} to share business information for {% if loan_amount %}a {{ loan_amount }} loan{% else %}a loan application{% endif %}.
+
+{% if message %}
+A note from {{ lender_name }}:
+{{ message }}
+
+{% endif %}
+What they've asked for:
+{% for group in groups %}
+{{ group.label }}
+{% for item in group.entries %}
+  - {{ item.label }}
+{% endfor %}
+{% endfor %}
+
+Start here (link valid until {{ expires_on }}):
+{{ link }}
+
+Connections are read-only. You can see exactly what is shared before you connect anything.
+
+Tangible, on behalf of {{ lender_name }}

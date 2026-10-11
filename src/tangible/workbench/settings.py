@@ -21,6 +21,15 @@ def _opt_bool(value: str | None) -> bool | None:
     return value.strip().lower() not in ("0", "false", "no", "off")
 
 
+def _auth_backend(value: str | None) -> str:
+    """TANGIBLE_AUTH_MODE: oidc (default) or clerk. "dev" is TANGIBLE_DEV_AUTH=1, kept as the one
+    switch for the unsafe mode so it is never turned on by a typo here."""
+    mode = (value or "oidc").strip().lower()
+    if mode not in ("oidc", "clerk"):
+        raise ValueError(f"TANGIBLE_AUTH_MODE must be 'oidc' or 'clerk', not {mode!r}")
+    return mode
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -55,11 +64,21 @@ class Settings:
     secret_store: SecretStore = field(default_factory=EnvSecrets, repr=False)
     # Hosted dev-auth demos only: one shared password (HTTP Basic) in front of everything.
     access_password: str | None = field(default=None, repr=False)
+    # "oidc" or "clerk" (TANGIBLE_AUTH_MODE). dev_auth (TANGIBLE_DEV_AUTH=1) overrides both.
+    auth_backend: str = "oidc"
+    # --- Clerk (auth_mode == "clerk"): the instance's Frontend API URL (the token issuer) and the
+    # origins allowed in a session token's `azp` (the web app's URLs).
+    clerk_issuer: str | None = None
+    clerk_authorized_parties: tuple[str, ...] = ()
+    # --- Onboarding: where invite links point (the web app), invite lifetime, optional SMTP.
+    public_url: str = "http://localhost:3000"
+    invite_days: int = 14
+    smtp_url: str | None = None
 
     @property
     def auth_mode(self) -> str:
-        """ "dev" only when TANGIBLE_DEV_AUTH=1 (dev_auth); otherwise "oidc"."""
-        return "dev" if self.dev_auth else "oidc"
+        """ "dev" when TANGIBLE_DEV_AUTH=1 (dev_auth); otherwise `auth_backend` (oidc or clerk)."""
+        return "dev" if self.dev_auth else self.auth_backend
 
     @property
     def secure_cookies(self) -> bool:
@@ -95,6 +114,16 @@ class Settings:
             session_hours=float(env.get("TANGIBLE_SESSION_HOURS", "8")),
             cookie_secure=_opt_bool(env.get("TANGIBLE_COOKIE_SECURE")),
             access_password=env.get("TANGIBLE_ACCESS_PASSWORD") or None,
+            auth_backend=_auth_backend(env.get("TANGIBLE_AUTH_MODE")),
+            clerk_issuer=env.get("TANGIBLE_CLERK_ISSUER") or None,
+            clerk_authorized_parties=tuple(
+                o.strip().rstrip("/")
+                for o in (env.get("TANGIBLE_CLERK_AUTHORIZED_PARTIES") or "").split(",")
+                if o.strip()
+            ),
+            public_url=env.get("TANGIBLE_PUBLIC_URL") or "http://localhost:3000",
+            invite_days=int(env.get("TANGIBLE_INVITE_DAYS", "14")),
+            smtp_url=env.get("TANGIBLE_SMTP_URL") or None,
             pricing=Pricing(
                 Decimal(env.get("TANGIBLE_PRICE_IN_PER_MTOK", "0")),
                 Decimal(env.get("TANGIBLE_PRICE_OUT_PER_MTOK", "0")),

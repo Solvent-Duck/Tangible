@@ -8,8 +8,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from tangible.workbench import services, ui
-from tangible.workbench.api import assessments, cases
+from tangible.workbench.api import assessments, cases, dashboard, invites, me, onboarding
 from tangible.workbench.auth import Authenticator, DevHeaderAuthenticator, OidcAuthenticator
+from tangible.workbench.clerk import build_clerk
 from tangible.workbench.gate import PasswordGate
 from tangible.workbench.oidc import OidcRuntime, build_runtime, missing_settings
 from tangible.workbench.settings import Settings
@@ -37,13 +38,15 @@ def create_app(
     runtime: OidcRuntime | None = None
     if settings.auth_mode == "dev":
         authenticator = authenticator or DevHeaderAuthenticator(settings.database_url)
+    elif settings.auth_mode == "clerk":
+        authenticator = authenticator or build_clerk(settings, http_client)
     elif authenticator is None or not missing_settings(settings):
         runtime, built = build_runtime(settings, http_client)
         authenticator = authenticator or built
     app = FastAPI(title="Tangible workbench")
     app.state.settings = settings
     app.state.authenticator = authenticator
-    app.state.oidc = runtime  # None in dev mode
+    app.state.oidc = runtime  # None in dev and clerk modes
 
     async def domain_error(_: Request, exc: Exception) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=_STATUS[type(exc)])
@@ -57,7 +60,13 @@ def create_app(
 
     app.include_router(cases.router)
     app.include_router(assessments.router)
-    ui.install(app)
+    app.include_router(me.router)
+    app.include_router(dashboard.router)
+    app.include_router(invites.router)
+    app.include_router(onboarding.router)
+    if settings.auth_mode != "clerk":
+        # The server-rendered workbench predates the web app; it knows dev and OIDC sign-in only.
+        ui.install(app)
     if settings.access_password:
         app.add_middleware(PasswordGate, password=settings.access_password)
     return app
