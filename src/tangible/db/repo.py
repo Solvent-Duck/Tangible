@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any, Literal, cast
 
 from tangible.db.session import Conn
+from tangible.db.signals import load_applications, load_public_signals
 from tangible.ledger.evidence import EvidenceRef
 from tangible.ledger.types import (
     AccountBalance,
@@ -96,7 +97,8 @@ def load_ledger(conn: Conn, borrower_id: str) -> Ledger:
     return Ledger(
         orders=orders, refunds=refunds, payouts=payouts, bank_txns=bank, invoices=invoices,
         inventory_snapshots=stock, account_balances=balances, connections=conns,
-        applications=(), statements=statements,
+        applications=load_applications(conn, b), statements=statements,
+        public_signals=load_public_signals(conn, b),
     )  # fmt: skip
 
 
