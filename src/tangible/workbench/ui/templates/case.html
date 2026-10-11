@@ -44,7 +44,7 @@
 </form>
 </section>
 {% endif %}
-{% if c.last_investigation %}<p>Last investigation stopped: {{ c.last_investigation.stop_reason }} ({{ c.last_investigation.at }}). Model calls: {{ c.usage.model_calls }}, cost ${{ c.usage.cost_usd }}.</p>{% endif %}
+{% if c.last_investigation or c.usage.model_calls %}<p>{% if c.last_investigation %}Last investigation stopped: {{ c.last_investigation.stop_reason }} ({{ c.last_investigation.at }}). {% endif %}Model calls: {{ c.usage.model_calls }}, {% if c.usage.model_calls and not c.usage.priced %}<span class="unpriced">{{ c.usage.cost_text }}</span>{% else %}cost {{ c.usage.cost_text }}{% endif %}.</p>{% endif %}
 {% endif %}
 
 <section aria-labelledby="m-h">

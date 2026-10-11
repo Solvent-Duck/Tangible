@@ -27,4 +27,11 @@
   </select></p>
   <button>Assign</button>
 </form>
+<h2>Reset a stuck investigation</h2>
+<p>For a case left 'investigating' after a server restart. Allowed only once the run is older than the stuck threshold; the case goes back to its status before the run and nothing is deleted.</p>
+<form method="post" action="/cases/reset">
+  <p><label for="reset_case_id">Case id</label> <input id="reset_case_id" name="case_id" size="40" required></p>
+  <p><label for="reset_reason">Reason (required)</label> <input id="reset_reason" name="reason" size="40" required></p>
+  <button>Reset stuck investigation</button>
+</form>
 {% endblock %}
