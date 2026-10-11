@@ -139,15 +139,26 @@ The onboarding pipeline (dashboard): Cedar & Sage Florist (invited), Bluebird Cy
 
 - The backtest is not evidence of predictive power. It runs on a synthetic cohort.
 - Web results are fixtures, not live lookups.
-- Bands and limits come from a starting-guess policy (0.6.0), not a calibrated one.
+- Bands and limits come from a starting-guess policy (0.7.0), not a calibrated one.
 
 
 ## Hosted demo
 
-- Web app: the `web` service on Railway (Clerk sign-in). API: the `workbench` service.
-- Two Clerk accounts, two personas: one is the tenant's credit admin (`--link-subject`), the
-  other its analyst with every case assigned (`--link-analyst`). Use two browser profiles.
+- **Web app:** https://web-production-e3b1a.up.railway.app (Clerk sign-in), the `web` service
+  on Railway. **API:** the `workbench` service, database `tangible_demo3`.
+- **Tenant:** Cascade Community Lending. Juniper & Rye Bakery (signed, band B, limit
+  $66,608.77, uplift via loyalty) and Northgate Phone Repair (signed, no band: bought reviews
+  are a hold). Both Clerk accounts are credit admins, so both see the dashboard, **Invite a
+  business**, **Outbox** and the signed cases. `tangible_demo4` is the same tenant unsigned, with
+  the second account as analyst (switch with `TANGIBLE_DATABASE_URL`).
+- **Business side without an account:** https://web-production-e3b1a.up.railway.app/demo/onboarding
+  is the real onboarding page over an in-browser mock (Juniper & Rye, invited by Cascade
+  Community Lending). Enter a legal name and save, then **Connect accounts**: 33 providers, each
+  with a read-only consent dialog. Nothing is sent or stored; a reload starts over.
+- **A real invite:** send it as credit admin to an email that isn't a staff account, copy the
+  link from **Outbox**, and open it in a private window. A staff account can't accept a
+  business invite.
+- **Backtest tab:** reads `/data/backtest/report.json` on the API's volume (policy 0.7.0: 13 of
+  13 plants caught, 20 of 20 replays match, no time leaks).
 - Live agent runs need Bedrock credentials, which the hosted API does not have: the hosted demo
   shows the pre-run cases. Run live investigations locally.
-- The Backtest tab needs the report on the API's volume (see [deploy.md](deploy.md)); otherwise
-  it shows how to generate one.

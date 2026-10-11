@@ -220,7 +220,9 @@ function GroupCard({
   onToggleGroup: (items: CatalogItem[], on: boolean) => void;
 }) {
   const Icon = GROUP_ICONS[group.id] ?? Sparkles;
-  const locked = items.every((i) => i.locked);
+  // A group with any always-requested item (standard financials, with optional payroll) has no
+  // group switch: an "off" switch beside "always requested" reads as a contradiction.
+  const locked = items.some((i) => i.locked);
   const optional = items.filter((i) => !i.locked);
   const allOn = optional.length > 0 && optional.every((i) => chosen.has(i.id));
   const someOn = items.some((i) => chosen.has(i.id));

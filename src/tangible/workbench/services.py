@@ -245,18 +245,34 @@ def _case_row(case: Case) -> dict[str, Any]:
 # ---------------------------------------------------------------- cases
 
 
+def _display_name(conn: Conn, subject: str | None) -> str | None:
+    """A staff user's display name, falling back to the subject (e.g. a bare Clerk user id)."""
+    if subject is None:
+        return None
+    row = conn.execute(
+        "SELECT display_name FROM app_user WHERE subject = %s", (subject,)
+    ).fetchone()
+    return row[0] if row and row[0] else subject
+
+
 def list_cases(conn: Conn, p: Principal) -> list[dict[str, Any]]:
     _staff_only(p)
-    cols = "c.id, c.borrower_id, b.name, c.as_of, c.status, c.assigned_analyst, c.previous_case_id"
+    cols = (
+        "c.id, c.borrower_id, b.name, c.as_of, c.status, c.assigned_analyst, "
+        "COALESCE(u.display_name, c.assigned_analyst), c.previous_case_id"
+    )
+    joins = (
+        "FROM case_file c JOIN borrower b ON b.id = c.borrower_id "
+        "LEFT JOIN app_user u ON u.tenant_id = c.tenant_id AND u.subject = c.assigned_analyst"
+    )
     if p.role == "analyst":
         rows = conn.execute(
-            f"SELECT {cols} FROM case_file c JOIN borrower b ON b.id = c.borrower_id "
-            "WHERE c.assigned_analyst = %s ORDER BY c.created_at DESC, c.id",
+            f"SELECT {cols} {joins} WHERE c.assigned_analyst = %s ORDER BY c.created_at DESC, c.id",
             (p.subject,),
         ).fetchall()
     else:
         rows = conn.execute(
-            f"SELECT {cols} FROM case_file c JOIN borrower b ON b.id = c.borrower_id "
+            f"SELECT {cols} {joins} "
             "WHERE EXISTS (SELECT 1 FROM assessment a WHERE a.case_id = c.id) "
             "ORDER BY c.created_at DESC, c.id"
         ).fetchall()
@@ -267,6 +283,7 @@ def list_cases(conn: Conn, p: Principal) -> list[dict[str, Any]]:
         "as_of",
         "status",
         "assigned_analyst",
+        "assigned_analyst_name",
         "previous_case_id",
     )
     return [_j(dict(zip(keys, r, strict=True))) for r in rows]
@@ -428,6 +445,7 @@ def get_case_detail(
         "SELECT previous_case_id FROM case_file WHERE id = %s", (case.id,)
     ).fetchone()
     out["previous_case_id"] = str(prev[0]) if prev and prev[0] else None
+    out["assigned_analyst_name"] = _display_name(conn, case.assigned_analyst)
     # Current findings only (the page list and sign counts read this); the ones a finding
     # replaced ride along under it as `corrections`.
     out["findings"] = _current_with_corrections(

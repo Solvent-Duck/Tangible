@@ -3,6 +3,12 @@
 Operational due diligence for lenders. The agent investigates, the tools compute, the policy decides.
 Full plan: [docs/build-plan.md](docs/build-plan.md). Work packages and status: [docs/implementation-plan.md](docs/implementation-plan.md).
 
+## Live demo
+
+- **Web app:** https://web-production-e3b1a.up.railway.app. The workspace behind sign-in is open to the demo accounts only.
+- **Business onboarding, no sign-in:** https://web-production-e3b1a.up.railway.app/demo/onboarding. This is the real borrower onboarding page running against an in-browser mock. Fill in the profile, connect accounts (33 simulated providers, read-only consent), add documents and submit. Nothing is sent or stored, and a reload starts over.
+- All data is synthetic. The demo run-sheet is [docs/demo-script.md](docs/demo-script.md).
+
 ## Quick start
 
 ```bash
@@ -52,7 +58,7 @@ approve plan ─► Strands Graph "intangibles_search" (parallel)
 every agent:  ModelClientModel  → agent/llm.py (Bedrock Converse, prompt caching, cost per call)
               TangibleGuardrails → Strands hooks enforcing the invariants below
                          ▼
-ms-4 metrics (pure, versioned) ─► policy 0.6.0: knockout → bands → uplift (≤ 1 notch) → review cap → limit → stress
+ms-4 metrics (pure, versioned) ─► policy 0.7.0: knockout → bands → uplift (≤ 1 notch) → review cap → limit → stress
 ```
 
 - **Custom model provider.** `strands_engine/model.py` is a Strands `Model` over our own `ModelClient`, so every model call still goes through `agent/llm.py`: one `model_call` row with its cost per step, Bedrock prompt caching, and scripted clients that drive Strands offline in tests.
@@ -80,7 +86,7 @@ Tangible does not forecast tariffs. It loads enacted or announced actions, dated
 | `src/tangible/ledger/` | Ledger row types and `known_as_of`, the single place the `observed_at` time rule lives. |
 | `src/tangible/ingest/`, `src/tangible/datasets/` | Load data into the ledger (`tangible-ingest`); UCI Online Retail loader and a synthetic generator with planted problems. |
 | `src/tangible/metrics/` | 39 versioned pure metrics (health, momentum, intangibles, systemic), latest set `ms-4`. |
-| `src/tangible/checks/` | 22 versioned integrity checks (reconciliation, completeness, tampering, documents, public listings, tariffs), latest set `cs-7` (`books_vs_processor` v2 waits for settlement; cs-7 writes findings in dollars and to two decimals); they emit findings. |
+| `src/tangible/checks/` | 22 versioned integrity checks (reconciliation, completeness, tampering, documents, public listings, tariffs), latest set `cs-8` (`books_vs_processor` v2 waits for settlement; cs-7 writes findings in dollars and to two decimals; cs-8 raises bought reviews as a hold); they emit findings. |
 | `src/tangible/policy/` | Policy loader (version + hash), typed schema, evaluator (band and limit) and review state. |
 | `src/tangible/assessment/` | Baseline, freeze and replay of an assessment (`tangible-replay`). |
 | `src/tangible/agent/strands_engine/` | The Strands Agents engine: model provider, guardrail hooks, the search-team Graph. |
@@ -93,7 +99,7 @@ Tangible does not forecast tariffs. It loads enacted or announced actions, dated
 | `src/tangible/onboarding/`, `src/tangible/notify/` | Lender invites, the versioned request catalog, the business's onboarding, and the email outbox. |
 | `web/` | The web app (Next.js): landing page, lender dashboard and invite composer, business onboarding, due-diligence workspace. |
 | `src/tangible/demo/` | Demo tenant seed (`tangible-demo seed`, `make demo`) and statement PDFs from a borrower's ledger (`tangible-demo statements`). |
-| `policies/default.yaml` | Default lender policy 0.6.0 (starting-guess thresholds; agent holds block only once an analyst accepts them; 0.4.0 added the intangibles uplift, 0.5.0 the stressed limit, 0.6.0 dollars and two decimals in findings and rules). Older versions are kept beside it (`default-0.2.2.yaml` … `default-0.5.0.yaml`) so replay can use the policy an assessment was frozen under. |
+| `policies/default.yaml` | Default lender policy 0.7.0 (starting-guess thresholds; agent holds block only once an analyst accepts them; 0.4.0 added the intangibles uplift, 0.5.0 the stressed limit, 0.6.0 dollars and two decimals in findings and rules, 0.7.0 check set cs-8). Older versions are kept beside it (`default-0.2.2.yaml` … `default-0.6.0.yaml`) so replay can use the policy an assessment was frozen under. |
 
 ## Status
 

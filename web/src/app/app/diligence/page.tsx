@@ -128,7 +128,7 @@ export default function CasesPage() {
                         <Badge tone={st.tone}>{st.label}</Badge>
                       </td>
                       <td className="px-3 py-3 text-muted">{date(c.as_of)}</td>
-                      <td className="px-3 py-3 text-muted">{c.assigned_analyst ?? "—"}</td>
+                      <td className="px-3 py-3 text-muted">{c.assigned_analyst_name ?? c.assigned_analyst ?? "—"}</td>
                       <td className="px-3 py-3">
                         {c.assessment ? (
                           <span className="flex items-center gap-2">
