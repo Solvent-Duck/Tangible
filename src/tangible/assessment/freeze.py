@@ -49,7 +49,10 @@ def review_states(
 def finding_inputs(
     findings: list[StoredFinding], states: dict[str, ReviewState]
 ) -> list[FindingInput]:
-    return [FindingInput(f.id, f.draft.check_key, f.draft.severity, states[f.id]) for f in findings]
+    return [
+        FindingInput(f.id, f.draft.check_key, f.draft.severity, states[f.id], f.origin)
+        for f in findings
+    ]
 
 
 def freeze(

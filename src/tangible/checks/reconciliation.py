@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Final
 
+from tangible.checks.calendar_uk import is_business_day
 from tangible.checks.registry import FindingDraft, Severity, check
 from tangible.ledger.types import BankTxn, InventorySnapshot, Invoice, Ledger, Order, Payout, Refund
 
@@ -29,6 +30,12 @@ MATCHED_HOLD_BELOW: Final = Decimal("0.85")
 # books_vs_processor v1
 BOOKS_GAP_REVIEW: Final = Decimal("0.05")
 BOOKS_GAP_HOLD: Final = Decimal("0.15")
+
+# books_vs_processor v2: same thresholds as v1 (BOOKS_GAP_*). A month is judged only once its
+# payouts have settled, or this many business days after month end, whichever comes first. The
+# wait is the borrower's own worst observed payout lag plus the margin, never below the floor.
+SETTLE_WAIT_MARGIN_BDAYS: Final = 2
+SETTLE_WAIT_FLOOR_BDAYS: Final = 12
 
 # orders_vs_payouts v1
 # v1 heuristic: orders carry no channel in the synthetic data, so an order whose net is under
@@ -286,6 +293,121 @@ def books_vs_processor(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
                 "gap": _q4(gap),
                 "threshold_review": str(BOOKS_GAP_REVIEW),
                 "threshold_hold": str(BOOKS_GAP_HOLD),
+            },
+        )
+    ]
+
+
+def _bdays_between(a: date, b: date) -> int:
+    """Business days d with a < d <= b (0 when b <= a)."""
+    n, d = 0, a
+    while d < b:
+        d += timedelta(days=1)
+        n += is_business_day(d)
+    return n
+
+
+def _add_bdays(d: date, n: int) -> date:
+    while n > 0:
+        d += timedelta(days=1)
+        n -= is_business_day(d)
+    return d
+
+
+@check("books_vs_processor", 2)
+def books_vs_processor_v2(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
+    """v1's comparison, but a month is judged only when its payouts have had time to settle.
+
+    v1 judged the previous month from the 5th, before the payouts for its last days had settled,
+    and so read a timing gap as missing money. v2 judges a month when either
+    (a) the ledger holds a settled payout expected after the month's last day (so the payouts
+        covering the whole month are in) and no payout for that month is still unsettled, or
+    (b) the borrower's own wait has passed: their worst observed payout lag
+        (``settled_on - expected_on``, in business days) plus ``SETTLE_WAIT_MARGIN_BDAYS``, but
+        at least ``SETTLE_WAIT_FLOOR_BDAYS``, after the month's last day. (b) keeps a borrower
+        whose payouts stopped from being skipped for ever: a missing payout is a finding.
+    Months not yet judged are listed in the ``skipped_months`` fact of the finding, when there
+    is one. Attribution by sales day, thresholds, severities and the worst-month rule are v1's.
+    """
+    k = ledger.known(as_of)
+    start, end = _window(as_of)
+    today = as_of.date()
+    payouts = [p for p in k.payouts if p.settled_on is not None]
+    if not payouts or not k.orders:
+        return []
+    lags = [
+        _bdays_between(p.expected_on, p.settled_on)
+        for p in payouts
+        if p.expected_on is not None and p.settled_on is not None
+    ]
+    wait = max(SETTLE_WAIT_FLOOR_BDAYS, max(lags, default=0) + SETTLE_WAIT_MARGIN_BDAYS)
+    # Payouts that are known but not settled by the as_of date (settled_on missing or ahead).
+    unsettled = [
+        p
+        for p in k.payouts
+        if p.expected_on is not None and (p.settled_on is None or p.settled_on > today)
+    ]
+    receivables = [i for i in k.invoices if i.kind == "receivable"]
+    worst: tuple[Decimal, date, Decimal, Decimal, list[Payout], list[Invoice]] | None = None
+    skipped: list[str] = []
+    for first, nxt in _full_months(start, end):
+        pending = any(
+            p.expected_on is not None and first <= p.expected_on - timedelta(days=1) < nxt
+            for p in unsettled
+        )
+        covered = any(
+            p.expected_on is not None
+            and p.expected_on >= nxt
+            and p.settled_on is not None
+            and p.settled_on <= today
+            for p in payouts
+        )
+        judge_from = _add_bdays(nxt - timedelta(days=1), wait)
+        if not (covered and not pending) and today < judge_from:
+            skipped.append(f"{first:%Y-%m} (judged from {judge_from})")
+            continue
+        books = sum((_order_net(o) for o in _orders_in(k.orders, first, nxt)), ZERO) - sum(
+            (r.amount for r in _refunds_in(k.refunds, first, nxt)), ZERO
+        )
+        if books <= 0:
+            continue
+        m_payouts = [p for p in payouts if first <= _sales_day(p) < nxt]
+        m_invoices = [i for i in receivables if first <= i.issued_on < nxt]
+        processor = sum((p.amount + p.fees for p in m_payouts), ZERO) + sum(
+            (i.amount for i in m_invoices), ZERO
+        )
+        gap = abs(books - processor) / books
+        if worst is None or gap > worst[0]:
+            worst = (gap, first, books, processor, m_payouts, m_invoices)
+    if worst is None or worst[0] <= BOOKS_GAP_REVIEW:
+        return []
+    gap, first, books, processor, m_payouts, m_invoices = worst
+    severity: Severity = "hold" if gap > BOOKS_GAP_HOLD else "review"
+    direction = "above" if processor > books else "below"
+    summary = (
+        f"In {first:%B %Y} the books show {_gbp(books)} of net revenue but the processor and "
+        f"invoice records show {_gbp(processor)} ({_pct(gap)} {direction} the books)."
+    )
+    weighted: list[tuple[Decimal, str, object]] = [
+        (abs(p.amount + p.fees), p.source_ref, p) for p in m_payouts
+    ] + [(abs(i.amount), i.source_ref, i) for i in m_invoices]
+    return [
+        FindingDraft(
+            check_key="books_vs_processor",
+            check_version=2,
+            severity=severity,
+            pillar=PILLAR,
+            summary=summary,
+            evidence_refs=_refs(weighted),
+            facts={
+                "month": f"{first:%Y-%m}",
+                "books_net": _q2(books),
+                "processor_total": _q2(processor),
+                "gap": _q4(gap),
+                "threshold_review": str(BOOKS_GAP_REVIEW),
+                "threshold_hold": str(BOOKS_GAP_HOLD),
+                "settle_wait_bdays": str(wait),
+                "skipped_months": "; ".join(skipped) if skipped else "none",
             },
         )
     ]

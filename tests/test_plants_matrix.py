@@ -37,7 +37,7 @@ def as_of_for(ledger: Ledger) -> datetime:
 
 
 def all_findings(ledger: Ledger, as_of: datetime) -> list[FindingDraft]:
-    return [f for key, v in check_set("cs-3") for f in run_check(key, v, ledger, as_of)]
+    return [f for key, v in check_set("cs-4") for f in run_check(key, v, ledger, as_of)]
 
 
 def decide(ledger: Ledger, as_of: datetime, findings: list[FindingDraft]):  # noqa: ANN201
@@ -79,3 +79,19 @@ def test_plant_is_caught(synthetic_ledger, plant: str) -> None:
         assert result.band is None and result.limit is None
     else:
         assert result.band is not None and result.band >= "C"  # review cap applies
+
+
+@pytest.mark.parametrize("days", [184, 187, 213])
+def test_books_vs_processor_v2_does_not_judge_a_month_before_it_settles(
+    synthetic_ledger, days: int
+) -> None:
+    """Clean data whose last day falls on the 4th to 7th of a month: v1 (cs-3) reads the unsettled
+    tail of the previous month as a gap; v2 (cs-4) waits."""
+    ledger = synthetic_ledger(days=days)
+    as_of = as_of_for(ledger)
+    assert as_of.day - 1 <= 7  # last bank day early in the month
+    v1 = run_check("books_vs_processor", 1, ledger, as_of)
+    assert v1 and v1[0].severity in ("review", "hold")
+    assert run_check("books_vs_processor", 2, ledger, as_of) == []
+    assert ("books_vs_processor", 1) in check_set("cs-3")
+    assert ("books_vs_processor", 2) in check_set("cs-4")

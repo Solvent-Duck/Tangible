@@ -1,14 +1,17 @@
 # Default policy. Each lender gets its own copy; the lender's credit team owns it.
 # Steps run in order: knockout -> bands -> review cap -> limit. Thresholds are starting guesses;
 # tune on the backtest. max/min are inclusive.
-version: "0.2.2"
+version: "0.3.0"
 metric_set: ms-2
-check_set: cs-3
+check_set: cs-4
 
 knockout:
   # A hold finding in these review states blocks a decision.
   open_finding_severity: hold
   hold_states: [open, accepted]
+  # Holds raised by the agent (origin "model") block only in these states: an agent finding is a
+  # lead until an analyst accepts it. Rule-check holds use hold_states above. (0.3.0)
+  model_hold_states: [accepted]
 
 bands:
   # First band whose conditions all hold wins; evaluated A to D.
