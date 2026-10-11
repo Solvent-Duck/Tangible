@@ -33,5 +33,6 @@ check: lint typecheck test
 #   TANGIBLE_BEDROCK_REGION=us-east-2 TANGIBLE_PRICE_IN_PER_MTOK=3.30 TANGIBLE_PRICE_OUT_PER_MTOK=16.50 \
 #   AWS_PROFILE=tangible uv run --with "botocore[crt]" tangible-demo seed --run-agent
 # Then serve it with the `workbench-demo` launch config (port 8001, same env, dev auth).
+# The agent runs on Strands Agents by default; TANGIBLE_AGENT_ENGINE=classic uses the old loop.
 demo: migrate
 	uv run tangible-demo seed
