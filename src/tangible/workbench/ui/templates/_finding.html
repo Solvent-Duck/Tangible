@@ -1,30 +1,39 @@
+{% from "_icons.html" import icon %}
 <article class="finding sev-{{ f.severity }}" id="finding-{{ f.id }}">
   <h4><span class="sev">{{ f.severity | upper }}</span> {{ f.summary }}</h4>
-  <p class="meta">
-    check {{ f.check_key }} v{{ f.check_version }} | pillar {{ f.pillar }} | {{ f.direction }} |
-    origin: <strong>{{ f.origin }}</strong>
+  <div class="chips meta">
+    <span class="chip mono" title="Check and version">{{ f.check_key }} v{{ f.check_version }}</span>
+    <span class="chip" title="Pillar">{{ f.pillar | humanize }}</span>
+    <span class="chip" title="Direction">{{ f.direction | humanize }}</span>
     {% if f.origin == 'model' %}
-      {% if f.verified %}| verified{% else %}| <strong class="unverified">UNVERIFIED model finding</strong>{% endif %}
+      <span class="chip chip-model" title="Origin">{{ icon('sparkles') }}origin: model</span>
+      {% if f.verified %}<span class="chip chip-ok">{{ icon('check') }}verified</span>{% else %}<span class="chip chip-warn unverified">{{ icon('alert') }}UNVERIFIED model finding</span>{% endif %}
+    {% else %}
+      <span class="chip" title="Origin">{{ icon('ruler') }}origin: {{ f.origin }}</span>
     {% endif %}
-    | review state: <strong>{{ f.review_state }}</strong>
-    | <a href="/cases/{{ c.id }}/findings/{{ f.id }}/trace">trace to source</a>
-  </p>
+    <span class="pill rs-{{ f.review_state }}" title="Review state">{{ f.review_state }}</span>
+    <a class="trace-link" href="/cases/{{ c.id }}/findings/{{ f.id }}/trace">Trace to source{{ icon('arrow-right') }}</a>
+  </div>
   {% include "_unmatched.html" %}
   {% if f.actions %}
   <details><summary>Review history ({{ f.actions | length }})</summary>
-    <ul>{% for a in f.actions %}<li>{{ a.at }} - {{ a.by }}: {{ a.action }} - {{ a.reason }}</li>{% endfor %}</ul>
+    <ul class="history">{% for a in f.actions %}<li><span class="avatar">{{ a.by[:1] }}</span><span><strong>{{ a.by }}</strong> {{ a.action | humanize | lower }} — {{ a.reason }}<br><span class="when">{{ a.at | when }}</span></span></li>{% endfor %}</ul>
   </details>
   {% endif %}
   {% if error %}<p class="flash flash-error" role="alert">{{ error }}</p>{% endif %}
   {% if is_analyst and c.status == 'review' %}
-  <form method="post" action="/cases/{{ c.id }}/findings/{{ f.id }}/review"
+  <form class="review-form" method="post" action="/cases/{{ c.id }}/findings/{{ f.id }}/review"
         hx-post="/cases/{{ c.id }}/findings/{{ f.id }}/review" hx-target="#finding-{{ f.id }}" hx-swap="outerHTML">
     <label for="reason-{{ f.id }}">Reason (required)</label>
-    <input id="reason-{{ f.id }}" name="reason" required size="40">
-    <button name="action" value="accept">Accept</button>
-    <button name="action" value="reject">Reject</button>
-    <button name="action" value="dispute">Dispute</button>
-    <button name="action" value="request_more">Request more</button>
+    <div class="review-row">
+      <input id="reason-{{ f.id }}" name="reason" required placeholder="Why you are accepting, rejecting or disputing this">
+      <div class="btns">
+        <button class="btn-sm btn-accept" name="action" value="accept">Accept</button>
+        <button class="btn-sm btn-reject" name="action" value="reject">Reject</button>
+        <button class="btn-sm btn-dispute" name="action" value="dispute">Dispute</button>
+        <button class="btn-sm btn-ghost" name="action" value="request_more">Request more</button>
+      </div>
+    </div>
   </form>
   {% endif %}
 </article>

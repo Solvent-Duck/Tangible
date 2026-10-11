@@ -24,6 +24,12 @@
         "uv", "run", "--with", "botocore[crt]", "tangible-workbench"
       ],
       "port": 8001
+    },
+    {
+      "name": "workbench-design",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["TANGIBLE_DEV_AUTH=1", "TANGIBLE_EVIDENCE_DIR=.evidence", "TANGIBLE_WEB_PROVIDER=fixtures", "TANGIBLE_PORT=8002", "uv", "run", "tangible-workbench"],
+      "port": 8002
     }
   ]
 }

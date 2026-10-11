@@ -1,26 +1,61 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Trace{% endblock %}
 {% block body %}
-<h1>Finding trace</h1>
-<p><a href="/cases/{{ case_id }}">Back to case</a></p>
 {% set f = t.finding %}
-<h2><span class="sev">{{ f.severity | upper }}</span> {{ f.summary }}</h2>
-<p>check {{ f.check_key }} v{{ f.check_version }} | origin {{ f.origin }}{% if f.origin == 'model' %} | {{ 'verified' if f.verified else 'UNVERIFIED' }}{% endif %} | state {{ f.review_state }}</p>
-{% include "_unmatched.html" %}
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Cases</a><span class="sep">/</span><a href="/cases/{{ case_id }}">Case <code>{{ case_id | short_id }}</code></a><span class="sep">/</span><span aria-current="page">Finding trace</span></nav>
+<div class="page-head">
+  <div class="titles">
+    <h1>Finding trace</h1>
+    <p class="lede">From the finding back to the tool calls it cites and the raw ledger lines behind them.</p>
+  </div>
+  <div class="actions"><a class="btn" href="/cases/{{ case_id }}">{{ icon('arrow-left') }}Back to case</a></div>
+</div>
 
-<h2>Tool calls ({{ t.tool_calls | length }})</h2>
-{% for tc in t.tool_calls %}
-<div class="call"><h3>{{ tc.tool }} v{{ tc.version }}</h3>
-<p>{{ tc.started_at }}{% if tc.duration_ms is not none %} | {{ tc.duration_ms }} ms{% endif %}{% if tc.error %} | <strong>error:</strong> {{ tc.error }}{% endif %}</p>
-<details><summary>Arguments</summary><pre>{{ tc.args | pretty }}</pre></details>
-<details><summary>Result</summary><pre>{{ tc.result | pretty }}</pre></details></div>
-{% else %}<p>No tool calls are attached to this finding (rule findings are computed directly from the ledger).</p>{% endfor %}
+<article class="finding sev-{{ f.severity }}">
+  <h2 class="mb-0" style="font-size:.98rem;font-weight:520;line-height:1.6;margin-bottom:.7rem"><span class="sev">{{ f.severity | upper }}</span> {{ f.summary }}</h2>
+  <div class="chips meta">
+    <span class="chip mono">check {{ f.check_key }} v{{ f.check_version }}</span>
+    {% if f.origin == 'model' %}<span class="chip chip-model">{{ icon('sparkles') }}origin {{ f.origin }}</span>{% if f.verified %}<span class="chip chip-ok">{{ icon('check') }}verified</span>{% else %}<span class="chip chip-warn">{{ icon('alert') }}UNVERIFIED</span>{% endif %}
+    {% else %}<span class="chip">{{ icon('ruler') }}origin {{ f.origin }}</span>{% endif %}
+    <span class="pill rs-{{ f.review_state }}">state {{ f.review_state }}</span>
+  </div>
+  {% include "_unmatched.html" %}
+</article>
 
-<h2>Evidence ({{ t.evidence | length }})</h2>
-{% for e in t.evidence %}
-<div class="ev"><p><code>{{ e.ref }}</code></p>
-{% if e.error %}<p class="flash flash-error" role="alert">Could not resolve: {{ e.error }}</p>
-{% elif e.line is none %}<p>No raw line could be found for this reference.</p>
-{% else %}<pre class="raw">{{ e.line }}</pre>{% endif %}</div>
-{% else %}<p>No evidence references.</p>{% endfor %}
+<div class="stack mt-3">
+<section aria-labelledby="tc-h">
+  <div class="section-title"><h2 id="tc-h">Tool calls <span class="count">{{ t.tool_calls | length }}</span></h2></div>
+  {% for tc in t.tool_calls %}
+  <div class="call">
+    <div class="call-head">
+      {{ icon('cpu') }}<h3>{{ tc.tool }} v{{ tc.version }}</h3>
+      <span class="chip">{{ tc.started_at | when }}</span>
+      {% if tc.duration_ms is not none %}<span class="chip">{{ icon('clock') }}{{ tc.duration_ms }} ms</span>{% endif %}
+      {% if tc.error %}<span class="chip chip-warn"><strong>error:</strong> {{ tc.error }}</span>{% endif %}
+    </div>
+    <div class="call-body">
+      <details><summary>Arguments</summary><pre>{{ tc.args | pretty }}</pre></details>
+      <details><summary>Result</summary><pre>{{ tc.result | pretty }}</pre></details>
+    </div>
+  </div>
+  {% else %}
+  <div class="card"><div class="empty">{{ icon('ruler') }}<strong>No tool calls are attached to this finding</strong><span>(rule findings are computed directly from the ledger).</span></div></div>
+  {% endfor %}
+</section>
+
+<section class="card" aria-labelledby="ev-h">
+  <div class="card-head"><h2 id="ev-h">Evidence <span class="count">{{ t.evidence | length }}</span></h2><span class="help">Raw source lines, exactly as stored</span></div>
+  {% if t.evidence %}
+  <ul class="ev-list">
+  {% for e in t.evidence %}
+    <li class="ev"><code class="ref">{{ e.ref }}</code>
+    {% if e.error %}<p class="flash flash-error mb-0" role="alert">Could not resolve: {{ e.error }}</p>
+    {% elif e.line is none %}<p class="help mb-0">No raw line could be found for this reference.</p>
+    {% else %}<pre class="raw">{{ e.line | pipes }}</pre>{% endif %}</li>
+  {% endfor %}
+  </ul>
+  {% else %}<div class="empty"><strong>No evidence references.</strong></div>{% endif %}
+</section>
+</div>
 {% endblock %}

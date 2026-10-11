@@ -49,7 +49,7 @@ from tangible.workbench.oidc import (
     OidcRuntime,
     safe_next,
 )
-from tangible.workbench.ui import queries
+from tangible.workbench.ui import display, queries
 
 HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"
@@ -68,6 +68,7 @@ templates = Jinja2Templates(directory=HERE / "templates")  # autoescape is on fo
 templates.env.globals["HTMX_URL"] = HTMX_URL
 templates.env.globals["HTMX_SRI"] = HTMX_SRI
 templates.env.filters["pretty"] = lambda v: json.dumps(v, indent=2, sort_keys=True, default=str)
+templates.env.filters.update(display.FILTERS)
 
 router = APIRouter()
 
@@ -461,7 +462,7 @@ def case_page(
     documents = services.case_documents(conn, p, _id(case_id)) if p.role == "analyst" else []
     groups = [(sev, [f for f in d["findings"] if f["severity"] == sev]) for sev in SEVERITY_ORDER]
     return render(
-        request, "case.html", p, c=d,
+        request, "case.html", p, c=d, borrower=queries.borrower_name(conn, d["borrower_id"]),
         groups=[(s, fs) for s, fs in groups if fs],
         metrics=queries.case_metrics(conn, d["borrower_id"], d["as_of"]),
         documents=documents, late=sum(1 for x in documents if not x["included"]),
@@ -654,7 +655,10 @@ def sign_confirm(request: Request, case_id: UUID, conn: UiConn, p: UiPrincipal) 
     for f in d["findings"]:
         key = f"{f['severity']} / {f['review_state']}"
         counts[key] = counts.get(key, 0) + 1
-    return render(request, "sign.html", p, c=d, counts=sorted(counts.items()))
+    return render(
+        request, "sign.html", p, c=d, counts=sorted(counts.items()),
+        borrower=queries.borrower_name(conn, d["borrower_id"]),
+    )  # fmt: skip
 
 
 @router.post("/cases/{case_id}/sign")
