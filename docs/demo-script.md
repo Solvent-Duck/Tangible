@@ -21,9 +21,16 @@ The seed prints the tenant id. Then write the statement PDFs for the live upload
 uv run tangible-demo statements --tenant-id <tenant id> --borrower "Harbour & Pine Homeware Ltd" --out data/demo/statements
 ```
 
-Start the `workbench-demo` launch config (port 8001; Sonnet 4.5, web fixtures and prices set).
-Open `http://127.0.0.1:8001/dev/login`, pick the newest `demo-…` tenant and sign in as **ana**
-(analyst). Keep a second tab signed in as **len** (lender) for the end.
+Start the `workbench-demo` launch config (the API on port 8001; Sonnet 4.5, web fixtures and
+prices set), then the web app against it:
+
+```bash
+TANGIBLE_API_URL=http://127.0.0.1:8001 make web-dev
+```
+
+Open the sign-in URL the seed printed (`http://localhost:3000/sign-in?tenant=…`) and sign in as
+**ana** (analyst). Keep a second browser profile signed in as **adm** (credit admin) for the
+invite and **len** (lender) for the end; dev sign-in is per browser.
 
 Seed on the demo day. The data ends this week. A case rebased during the demo is dated "now",
 and connections seeded days earlier would read as stale.
@@ -40,7 +47,11 @@ and connections seeded days earlier would read as stale.
 
 ## Flow (about 15 minutes)
 
-1. **Portfolio.** On the case list, each case shows its status, band and limit at a glance.
+0. **Invite (optional, 3 minutes).** As **adm**: Invite a business → toggle Inventory and
+   Digital presence → watch the email preview → Send. Copy the link from the Outbox, open it in
+   a private window, create the account, connect a bank, upload a file, submit. Back on the
+   dashboard the business is "Ready for diligence"; Start diligence assigns it to ana.
+1. **Portfolio.** On Due diligence, each case shows its status, band and limit at a glance.
 2. **The split.** "The agent investigates, the tools compute, the policy decides." Open
    **Marlow Lane** → assessment:
    - "Band C because…": every rule that fired, with the value it saw.
@@ -52,7 +63,7 @@ and connections seeded days earlier would read as stale.
    received. Point out the "verified" badge: every number in the finding was found in a cited
    tool result.
 4. **Live investigation.** Open **Harbour & Pine** → Propose plan → read the checklist → Approve
-   → Run investigation (about 3 minutes; the status updates itself). While it runs, show
+   → Start investigation (about 3 minutes; the status updates itself). While it runs, show
    **Oakden** (holds from rules and verified agent findings; the "Checked, nothing found"
    wrap-up).
 5. **Review.** On **Brightwell**:
@@ -63,11 +74,11 @@ and connections seeded days earlier would read as stale.
    - Show a corrected finding: "Superseded earlier version" holds the version that failed verification.
 6. **Forged statement.** On a fresh open case (or Harbour & Pine before step 4), upload
    `data/demo/statements/harbour-pine-homeware-ltd-statement-forged.pdf` with **Upload and
-   rebase** (about 50 seconds while the statement is read). The new case's baseline shows a
+   re-base** (about 50 seconds while the statement is read). The new case's baseline shows a
    `document_mismatch` **hold**: 3 statement lines with no bank match. The genuine PDF raises
    nothing.
 7. **Sign.** Sign a review case. Signing freezes the assessment, then:
-   - **Replay and compare** shows it re-derives exactly;
+   - **Replay** shows it re-derives exactly;
    - **Export JSON** gives the frozen assessment.
 8. **Lender view.** Switch to **len**. The lender sees signed cases only and has no actions.
 9. **Backtest.** Open the Backtest tab: 13 of 13 planted problems caught, loss by band, all 20
@@ -78,7 +89,7 @@ and connections seeded days earlier would read as stale.
 
 - **Live run fails** (credentials, throttling): the case page says why in a plain sentence.
   Show the pre-run cases instead; they have the same flow.
-- **Run stuck in "investigating"** after a restart: use "Reset stuck investigation" (after 15
+- **Run stuck in "investigating"** after a restart: use the Reset button on the case (after 15
   minutes, or set `TANGIBLE_STUCK_AFTER_MIN=1` before starting the server).
 - **Upload not read** ("could not be read"): check the model backend. Show the forged-PDF result
   from the rehearsal instead.

@@ -473,18 +473,25 @@ function Documents({ c }: { c: Workspace }) {
   const router = useRouter();
   const ref = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const upload = useAction(c.id, "Uploaded");
+  const upload = useAction<{ id?: string }>(c.id, undefined, (r) => {
+    setFile(null);
+    if (ref.current) ref.current.value = "";
+    if (r.id) {
+      toast.success("Uploaded and re-based");
+      router.push(`/app/diligence/${r.id}`);
+    } else {
+      toast.success("Uploaded");
+    }
+  });
   const rebase = useAction<{ id: string }>(c.id, "Case re-based", (r) => router.push(`/app/diligence/${r.id}`));
   const early = c.status === "open" || c.status === "planning";
 
-  async function send(andRebase: boolean) {
+  function send(andRebase: boolean) {
     if (!file) return;
     const form = new FormData();
     form.append("file", file);
-    await upload.mutateAsync({ path: "/documents", form });
-    setFile(null);
-    if (ref.current) ref.current.value = "";
-    if (andRebase) rebase.mutate({ path: "/rebase" });
+    // Upload-and-re-base is one server-side step, so the new case is never half made.
+    upload.mutate({ path: andRebase ? "/documents?rebase=true" : "/documents", form });
   }
 
   return (

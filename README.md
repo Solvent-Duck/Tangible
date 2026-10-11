@@ -12,13 +12,13 @@ make migrate
 make check     # ruff, mypy, pytest
 ```
 
-Run the analyst workbench locally (dev login; production requires OIDC settings and refuses to start without them):
+Run the workbench API locally (dev auth; otherwise it needs OIDC or Clerk settings and refuses to start without them):
 
 ```bash
-TANGIBLE_DEV_AUTH=1 uv run tangible-workbench   # http://127.0.0.1:8000
+TANGIBLE_DEV_AUTH=1 uv run tangible-workbench   # http://127.0.0.1:8000/api
 ```
 
-Seed a demo tenant (five synthetic borrowers dated to the last week, users ana/adm/len, open cases; prints the dev-login URL). Serve it with the `workbench-demo` launch config on port 8001:
+Seed a demo tenant (five synthetic borrowers dated to the last week, users ana/adm/len, open cases; prints the web app's sign-in URL). Serve the API with the `workbench-demo` launch config on port 8001:
 
 ```bash
 make demo
@@ -47,7 +47,7 @@ TANGIBLE_API_URL=http://127.0.0.1:8000 make web-dev   # http://localhost:3000
 | `src/tangible/evidence/`, `src/tangible/secrets/` | Raw evidence store (local directory, or S3 with Object Lock and SSE-KMS) and connector tokens (environment or Secrets Manager). |
 | `src/tangible/connectors/` | Rutter and Plaid adapters (`tangible-pull`) and sandbox seeding (`tangible-sandbox`). |
 | `src/tangible/backtest/` | Runs a cohort as of each loan's decision date and reports loss by band, metric discrimination, finding lift, plants caught, replay matches and agent spread (`tangible-backtest`). |
-| `src/tangible/workbench/` | Workbench: the FastAPI JSON API (`tangible-workbench`) with dev, OIDC or Clerk auth, the legacy Jinja2/htmx UI, and `tangible-admin` for staff users. |
+| `src/tangible/workbench/` | Workbench: the FastAPI JSON API (`tangible-workbench`) with dev, OIDC (bearer tokens) or Clerk auth, and `tangible-admin` for staff users. |
 | `src/tangible/onboarding/`, `src/tangible/notify/` | Lender invites, the versioned request catalog, the business's onboarding, and the email outbox. |
 | `web/` | The web app (Next.js): landing page, lender dashboard and invite composer, business onboarding, due-diligence workspace. |
 | `src/tangible/demo/` | Demo tenant seed (`tangible-demo seed`, `make demo`) and statement PDFs from a borrower's ledger (`tangible-demo statements`). |

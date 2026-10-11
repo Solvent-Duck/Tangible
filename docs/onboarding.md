@@ -52,7 +52,7 @@ Borrower accounts are refused every case, finding and assessment route.
 |---|---|---|
 | dev | `TANGIBLE_DEV_AUTH=1`; trusts `X-Tangible-User` / `X-Tangible-Tenant` | `/sign-in` is a tenant and user picker |
 | clerk | Verifies the Clerk session JWT: JWKS, `iss`, `exp`, and `azp` in `TANGIBLE_CLERK_AUTHORIZED_PARTIES`. The tenant comes from the subject's memberships; a client in several tenants sends `X-Tangible-Tenant`. | Clerk `<SignIn>` / `<SignUp>`; the session token is sent as `Authorization: Bearer` |
-| oidc | Unchanged (bearer JWTs). | Not supported by the web app; the legacy Jinja UI still has the OIDC login. |
+| oidc | Bearer JWT access tokens only (API clients). | Not supported; use Clerk for browser sign-in. |
 
 Clerk setup:
 1. Create a development instance.
@@ -92,14 +92,11 @@ Open http://localhost:3000 and sign in as a demo credit admin (run `make demo` f
 - **Two services:** the API (root `Dockerfile`) and the web app (`web/Dockerfile`, Next standalone).
 - **Build-time values:** the web image bakes in `TANGIBLE_API_URL` and the `NEXT_PUBLIC_*` values at build time.
 - **Invite links:** set `TANGIBLE_PUBLIC_URL` on the API to the web app's URL, so links point at it.
-- **Password gate:** the shared-password gate (`TANGIBLE_ACCESS_PASSWORD`) guards the API. It does not suit the web app, which needs public `/invite/*` pages, so use Clerk for a hosted demo.
+- **Password gate:** the shared-password gate (`TANGIBLE_ACCESS_PASSWORD`) guards the API only. It does not suit the web app, which needs public `/invite/*` pages, so use Clerk for a hosted demo.
 
 ## Not done
 
 - **Real connectors:** Plaid Link and Rutter Link, then pulling data.
 - **Real email delivery** (SES or Resend).
 - **Reading onboarding uploads before diligence.** They are read when the case is re-based, as today.
-- **Retiring the Jinja/htmx workbench.** The web app reaches parity for dev and Clerk users. The legacy UI still carries:
-  - the OIDC browser login;
-  - the atomic upload-and-rebase;
-  - the demo run-sheet in `docs/demo-script.md`.
+- **OIDC browser sign-in.** Removed with the old Jinja/htmx workbench; OIDC remains for API clients with bearer tokens.

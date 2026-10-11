@@ -1,2 +1,0 @@
-{% from "_icons.html" import icon %}
-{% if flash %}<div class="flash flash-{{ flash.kind }}" role="status">{{ icon('alert-circle' if flash.kind == 'error' else 'check-circle') }}<div class="body">{{ flash.message }}</div></div>{% endif %}

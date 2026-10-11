@@ -53,9 +53,7 @@ class ClerkVerifier(OidcProvider):
             OidcConfig(
                 issuer=issuer.rstrip("/"),
                 client_id="",
-                redirect_uri="",
                 audience="",
-                scopes="",
                 tenant_claim="",
                 allow_insecure_http=allow_insecure_http,
             ),  # fmt: skip

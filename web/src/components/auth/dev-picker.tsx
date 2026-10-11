@@ -25,8 +25,9 @@ export function DevPicker() {
   const api = useApi();
   const auth = useAuthState();
   const router = useRouter();
-  const next = useSearchParams().get("next");
-  const [open, setOpen] = useState<string | null>(null);
+  const params = useSearchParams();
+  const next = params.get("next");
+  const [open, setOpen] = useState<string | null>(params.get("tenant"));
   const tenants = useQuery({
     queryKey: ["dev-tenants"],
     queryFn: () => api<DevTenant[]>("/api/dev/tenants", { auth: false }),

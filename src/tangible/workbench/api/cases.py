@@ -10,9 +10,8 @@ from pydantic import BaseModel
 
 from tangible.agent.llm import ModelConfigError
 from tangible.db.session import tenant_session
-from tangible.workbench import queries, services
+from tangible.workbench import display, queries, services
 from tangible.workbench.deps import ConnDep, PrincipalDep, SettingsDep
-from tangible.workbench.ui import display
 
 router = APIRouter(prefix="/api/cases")
 
@@ -210,8 +209,15 @@ def upload_document(
     p: PrincipalDep,
     settings: SettingsDep,
     file: UploadFile = File(...),  # noqa: B008
+    rebase: bool = False,
 ) -> dict[str, Any]:
     data = file.file.read(settings.max_upload_bytes + 1)
+    if rebase:
+        # One step for an 'open' or 'planning' case: store the file, then re-base so the new case
+        # (dated now) sees it. Returns the new case with the upload under "upload".
+        return services.upload_and_rebase(
+            conn, settings, p, str(case_id), file.filename or "", data
+        )
     return services.upload_document(conn, settings, p, str(case_id), file.filename or "", data)
 
 

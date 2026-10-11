@@ -85,6 +85,6 @@ def test_create_app_gates_everything_but_the_health_check() -> None:
     )  # fmt: skip
     c = TestClient(create_app(s))
     assert c.get("/healthz").json() == {"ok": True}
-    assert c.get("/static/app.css").status_code == 401
-    assert c.get("/static/app.css", headers=basic("", "pw")).status_code == 200
-    assert c.get("/dev/login").status_code == 401
+    assert c.get("/api/invites/catalog").status_code == 401
+    assert c.get("/api/invites/catalog", headers=basic("", "pw")).status_code == 200
+    assert c.get("/api/dev/tenants").status_code == 401

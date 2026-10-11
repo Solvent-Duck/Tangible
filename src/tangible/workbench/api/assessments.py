@@ -6,9 +6,8 @@ from uuid import UUID
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from tangible.workbench import queries, services
+from tangible.workbench import display, queries, services
 from tangible.workbench.deps import ConnDep, PrincipalDep, SettingsDep
-from tangible.workbench.ui import display
 
 router = APIRouter(prefix="/api/assessments")
 

@@ -70,7 +70,7 @@ def test_seed_creates_tenant_users_borrowers_and_open_cases(
 ) -> None:
     s = run_seed(test_db_url, lines, tmp_path, datetime(2026, 10, 10, 14, 32))
     assert s.tenant_name == "demo-20261010-1432"
-    assert s.login_url == f"http://127.0.0.1:8000/dev/login?tenant={s.tenant_id}"
+    assert s.login_url == f"http://localhost:3000/sign-in?tenant={s.tenant_id}"
     assert s.end_on == s.requested_end_on == END_ON and not s.moved
     t = s.tenant_id
 

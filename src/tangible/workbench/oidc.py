@@ -1,43 +1,32 @@
-"""OpenID Connect for the workbench: provider metadata, JWT verification, login and sessions.
+"""OpenID Connect for the workbench API: discovery, JWKS and bearer-token verification.
 
-Assumptions (see docs in the PR notes):
+The API is the only OIDC surface: callers send JWT access tokens (`Authorization: Bearer`) and
+the browser sign-in happens in the web app (Clerk, see `clerk.py`) or the caller's own client.
+
+Assumptions:
   * One IdP per deployment. `sub` is stored as app_user.subject without the issuer.
-  * API callers send JWT access tokens (`Authorization: Bearer`); opaque tokens are rejected.
-  * The tenant is a UUID in a claim (default `tangible_tenant`) of the verified token. The ID token
-    used for the browser login must carry that claim too.
+  * Opaque access tokens are rejected.
+  * The tenant is a UUID in a claim (default `tangible_tenant`) of the verified token.
   * Roles and access come only from app_user, looked up on every request. Never from claims.
 
 Errors never include token material. Reasons for rejection are logged at DEBUG only.
 """
 
-import base64
-import hashlib
 import hmac
 import json
 import logging
-import re
-import secrets
 import threading
 import time
-import uuid
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import urlsplit
 
 import httpx
 import jwt
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
-from tangible.secrets import SecretNotFound
-from tangible.workbench.auth import (
-    OidcAuthenticator,
-    Principal,
-    ProviderError,
-    Unauthenticated,
-    lookup_principal,
-    principal_from_claims,
-)
+from tangible.workbench.auth import OidcAuthenticator, ProviderError, Unauthenticated
 from tangible.workbench.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -51,15 +40,7 @@ METADATA_MAX_AGE_SECONDS = 3600.0
 HTTP_TIMEOUT = httpx.Timeout(5.0, connect=3.0)
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_TOKEN_CHARS = 16_384
-LOGIN_TTL_SECONDS = 600
-
-SESSION_COOKIE = "tangible_session"
-LOGIN_COOKIE = "tangible_login"
 _GENERIC = "invalid token"
-
-
-class LoginStateError(Exception):
-    """The callback does not belong to a login this browser started (HTTP 400)."""
 
 
 def _fail(reason: str) -> Unauthenticated:
@@ -67,26 +48,12 @@ def _fail(reason: str) -> Unauthenticated:
     return Unauthenticated(_GENERIC)
 
 
-def _b64(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-
-
-def _unb64(text: str) -> bytes:
-    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
-
-
-# ---------------------------------------------------------------- configuration
-
-
 @dataclass(frozen=True)
 class OidcConfig:
     issuer: str
     client_id: str
-    redirect_uri: str
     audience: str
-    scopes: str
     tenant_claim: str
-    client_secret: str | None = field(default=None, repr=False)
     allow_insecure_http: bool = False
 
 
@@ -97,17 +64,10 @@ def _is_https(url: str, allow_http: bool) -> bool:
     return parts.scheme == "https" or (allow_http and parts.scheme == "http")
 
 
-def _is_loopback_http(url: str) -> bool:
-    parts = urlsplit(url)
-    return parts.scheme == "http" and parts.hostname in ("localhost", "127.0.0.1", "::1")
-
-
 _REQUIRED = (
     ("oidc_issuer", "TANGIBLE_OIDC_ISSUER"),
     ("oidc_client_id", "TANGIBLE_OIDC_CLIENT_ID"),
-    ("oidc_redirect_uri", "TANGIBLE_OIDC_REDIRECT_URI"),
     ("oidc_audience", "TANGIBLE_OIDC_AUDIENCE"),
-    ("session_secret", "TANGIBLE_SESSION_SECRET"),
 )
 
 
@@ -116,54 +76,28 @@ def missing_settings(settings: Settings) -> list[str]:
 
 
 def config_from_settings(settings: Settings) -> OidcConfig:
-    """Validate the OIDC settings and resolve the client secret. Raises RuntimeError."""
+    """Validate the OIDC settings. Raises RuntimeError."""
     missing = missing_settings(settings)
     if missing:
         raise RuntimeError(
             "refusing to start: OIDC auth is not configured (missing " + ", ".join(missing) + "). "
             "Set TANGIBLE_DEV_AUTH=1 on a development machine to use dev header auth instead."
         )
-    assert settings.oidc_issuer and settings.oidc_client_id and settings.oidc_redirect_uri
-    assert settings.session_secret
+    assert settings.oidc_issuer and settings.oidc_client_id and settings.oidc_audience
     http = settings.oidc_allow_insecure_http
     if not _is_https(settings.oidc_issuer, http):
         raise RuntimeError("refusing to start: TANGIBLE_OIDC_ISSUER must be an https URL")
-    if not (
-        _is_https(settings.oidc_redirect_uri, http) or _is_loopback_http(settings.oidc_redirect_uri)
-    ):
-        raise RuntimeError(
-            "refusing to start: TANGIBLE_OIDC_REDIRECT_URI must be https (http only on localhost)"
-        )
-    if len(settings.session_secret.encode()) < 32:
-        raise RuntimeError("refusing to start: TANGIBLE_SESSION_SECRET must be at least 32 bytes")
-    if not settings.session_hours > 0:
-        raise RuntimeError("refusing to start: TANGIBLE_SESSION_HOURS must be positive")
-    assert settings.oidc_audience
     if settings.oidc_audience == settings.oidc_client_id:
         # Otherwise any user's ID token (aud = client id) would also pass as an API access token.
         raise RuntimeError(
             "refusing to start: TANGIBLE_OIDC_AUDIENCE must be the API's own audience, "
             "not the client id"
         )
-    if "openid" not in settings.oidc_scopes.split():
-        raise RuntimeError("refusing to start: TANGIBLE_OIDC_SCOPES must include 'openid'")
-    secret = None
-    if settings.oidc_client_secret_ref:
-        try:
-            secret = settings.secret_store.get(settings.oidc_client_secret_ref)
-        except (SecretNotFound, ValueError):
-            raise RuntimeError(
-                "refusing to start: cannot resolve TANGIBLE_OIDC_CLIENT_SECRET_REF "
-                f"({settings.oidc_client_secret_ref!r})"
-            ) from None
     return OidcConfig(
         issuer=settings.oidc_issuer,
         client_id=settings.oidc_client_id,
-        redirect_uri=settings.oidc_redirect_uri,
         audience=settings.oidc_audience,
-        scopes=settings.oidc_scopes,
         tenant_claim=settings.oidc_tenant_claim,
-        client_secret=secret,
         allow_insecure_http=http,
     )
 
@@ -224,15 +158,9 @@ class OidcProvider:
             doc = self._get_json(c.issuer.rstrip("/") + "/.well-known/openid-configuration")
             if doc.get("issuer") != c.issuer:  # exact match (RFC 8414 / OIDC Discovery 4.3)
                 raise ProviderError("discovery document issuer does not match configuration")
-            for key in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
-                v = doc.get(key)
-                if not isinstance(v, str) or not _is_https(v, c.allow_insecure_http):
-                    raise ProviderError(f"discovery document has no usable {key}")
-            end = doc.get("end_session_endpoint")
-            if end is not None and not (
-                isinstance(end, str) and _is_https(end, c.allow_insecure_http)
-            ):
-                doc.pop("end_session_endpoint")
+            jwks = doc.get("jwks_uri")
+            if not isinstance(jwks, str) or not _is_https(jwks, c.allow_insecure_http):
+                raise ProviderError("discovery document has no usable jwks_uri")
             self._metadata, self._metadata_at = doc, now
             return doc
 
@@ -327,233 +255,15 @@ class OidcProvider:
             raise _fail("RSA key too small")
         return key
 
-    # -- authorization code exchange
 
-    def exchange_code(self, code: str, code_verifier: str) -> str:
-        """Redeem the code (client_secret_basic + PKCE) and return the raw ID token."""
-        c = self.config
-        data = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": c.redirect_uri,
-            "code_verifier": code_verifier,
-        }
-        headers = {"Accept": "application/json"}
-        if c.client_secret:
-            cred = f"{quote(c.client_id, safe='')}:{quote(c.client_secret, safe='')}"
-            headers["Authorization"] = "Basic " + base64.b64encode(cred.encode()).decode()
-        else:
-            data["client_id"] = c.client_id  # public client
-        try:
-            r = self.client.post(
-                self.metadata()["token_endpoint"], data=data, headers=headers,
-                timeout=HTTP_TIMEOUT, follow_redirects=False,
-            )  # fmt: skip
-        except httpx.HTTPError as e:
-            log.debug("token endpoint failed: %s", type(e).__name__)
-            raise ProviderError("identity provider unavailable") from None
-        if 400 <= r.status_code < 500:
-            log.debug("token endpoint rejected the code: %s", r.status_code)
-            raise Unauthenticated("sign-in failed")
-        if r.status_code != 200 or len(r.content) > MAX_RESPONSE_BYTES:
-            raise ProviderError("identity provider returned an unusable response")
-        try:
-            body = r.json()
-        except ValueError:
-            raise ProviderError("identity provider returned invalid JSON") from None
-        id_token = body.get("id_token") if isinstance(body, dict) else None
-        if not isinstance(id_token, str):
-            raise _fail("no id_token in token response")
-        return id_token
-
-
-# ---------------------------------------------------------------- signed cookies
-
-
-class SignedCookies:
-    """Stdlib HMAC-SHA256 signed JSON values with an absolute expiry. Not encrypted: never put
-    anything in one that the browser's owner must not see."""
-
-    MAX_LEN = 4096
-
-    def __init__(self, secret: bytes, now: Callable[[], float] = time.time) -> None:
-        self._secret = secret
-        self.now = now
-
-    def _mac(self, purpose: str, body: str) -> str:
-        key = hmac.new(self._secret, b"tangible-cookie-v1|" + purpose.encode(), "sha256").digest()
-        return _b64(hmac.new(key, body.encode(), "sha256").digest())
-
-    def dumps(self, purpose: str, payload: Mapping[str, Any], ttl: float) -> str:
-        now = int(self.now())
-        full = {**payload, "p": purpose, "iat": now, "exp": now + int(ttl)}
-        body = _b64(json.dumps(full, separators=(",", ":")).encode())
-        return f"{body}.{self._mac(purpose, body)}"
-
-    def loads(self, purpose: str, value: str | None) -> dict[str, Any] | None:
-        if not value or len(value) > self.MAX_LEN or value.count(".") != 1:
-            return None
-        body, sig = value.split(".")
-        if not hmac.compare_digest(sig.encode(), self._mac(purpose, body).encode()):
-            return None
-        try:
-            data = json.loads(_unb64(body))
-        except ValueError:
-            return None
-        if not isinstance(data, dict) or data.get("p") != purpose:
-            return None
-        exp = data.get("exp")
-        if not isinstance(exp, int) or self.now() >= exp:
-            return None
-        return data
-
-
-# ---------------------------------------------------------------- redirects
-
-
-_CONTROL = re.compile(r"[\x00-\x1f\x7f\\]")
-
-
-def safe_next(value: str | None) -> str | None:
-    """Only same-site relative paths (no scheme, host, protocol-relative or backslash tricks)."""
-    if not value or len(value) > 2000 or _CONTROL.search(value):
-        return None
-    if not value.startswith("/") or value.startswith("//") or value.startswith("/auth/"):
-        return None
-    parts = urlsplit(value)
-    if parts.scheme or parts.netloc:
-        return None
-    return value
-
-
-# ---------------------------------------------------------------- runtime used by the routes
-
-
-class OidcRuntime:
-    """Everything the UI needs: login start/finish, sessions, logout."""
-
-    def __init__(
-        self,
-        provider: OidcProvider,
-        conninfo: str,
-        session_secret: str,
-        *,
-        session_hours: float,
-        secure_cookies: bool,
-        now: Callable[[], float] = time.time,
-    ) -> None:
-        self.provider = provider
-        self.config = provider.config
-        self.conninfo = conninfo
-        self.cookies = SignedCookies(session_secret.encode(), now)
-        self.session_seconds = int(session_hours * 3600)
-        self.secure_cookies = secure_cookies
-
-    # -- login
-
-    def begin_login(self, next_url: str | None) -> tuple[str, str]:
-        """Returns (authorization URL, login cookie value)."""
-        c = self.config
-        state, nonce = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-        verifier = secrets.token_urlsafe(64)  # 86 chars, within RFC 7636's 43..128
-        challenge = _b64(hashlib.sha256(verifier.encode()).digest())
-        endpoint = self.provider.metadata()["authorization_endpoint"]
-        query = urlencode(
-            {
-                "response_type": "code", "client_id": c.client_id, "redirect_uri": c.redirect_uri,
-                "scope": c.scopes, "state": state, "nonce": nonce,
-                "code_challenge": challenge, "code_challenge_method": "S256",
-            }
-        )  # fmt: skip
-        url = endpoint + ("&" if "?" in endpoint else "?") + query
-        cookie = self.cookies.dumps(
-            "login",
-            {"state": state, "nonce": nonce, "v": verifier, "next": safe_next(next_url)},
-            LOGIN_TTL_SECONDS,
-        )
-        return url, cookie
-
-    def finish_login(
-        self, login_cookie: str | None, state: str | None, code: str | None, iss: str | None
-    ) -> tuple[Principal, str | None]:
-        """Validate the callback and return the principal and the post-login path."""
-        data = self.cookies.loads("login", login_cookie)
-        if (
-            data is None
-            or not state
-            or not hmac.compare_digest(state.encode(), str(data.get("state", "")).encode())
-        ):
-            raise LoginStateError("login state mismatch")
-        if iss is not None and iss != self.config.issuer:  # RFC 9207 mix-up defence
-            raise LoginStateError("issuer mismatch")
-        if not code:
-            raise LoginStateError("missing code")
-        id_token = self.provider.exchange_code(code, str(data["v"]))
-        claims = self.provider.verify_jwt(
-            id_token, audience=self.config.client_id, nonce=str(data["nonce"])
-        )
-        principal = principal_from_claims(self.conninfo, self.config.tenant_claim, claims)
-        nxt = data.get("next")
-        return principal, safe_next(nxt if isinstance(nxt, str) else None)
-
-    # -- sessions
-
-    def issue_session(self, p: Principal) -> str:
-        return self.cookies.dumps(
-            "session",
-            {"t": p.tenant_id, "s": p.subject, "sid": secrets.token_urlsafe(16)},
-            self.session_seconds,
-        )
-
-    def principal_for_session(self, cookie: str | None) -> Principal:
-        """Verify the cookie and re-read app_user, so removals and role changes apply at once."""
-        data = self.cookies.loads("session", cookie)
-        if data is None:
-            raise Unauthenticated("not signed in")
-        try:
-            tenant = str(uuid.UUID(str(data["t"])))
-            subject = data["s"]
-        except (KeyError, ValueError):
-            raise Unauthenticated("not signed in") from None
-        if not isinstance(subject, str):
-            raise Unauthenticated("not signed in")
-        return lookup_principal(self.conninfo, tenant, subject)
-
-    # -- logout
-
-    def logout_url(self) -> str | None:
-        """The provider's RP-initiated logout URL, if it advertises one."""
-        try:
-            end = self.provider.metadata().get("end_session_endpoint")
-        except ProviderError:
-            return None
-        if not isinstance(end, str):
-            return None
-        root = urlsplit(self.config.redirect_uri)
-        query = urlencode(
-            {
-                "client_id": self.config.client_id,
-                "post_logout_redirect_uri": f"{root.scheme}://{root.netloc}/",
-            }
-        )
-        return end + ("&" if "?" in end else "?") + query
-
-
-def build_runtime(
+def build_oidc(
     settings: Settings,
     client: httpx.Client | None = None,
     clock: Callable[[], float] = time.monotonic,
-    now: Callable[[], float] = time.time,
-) -> tuple[OidcRuntime, OidcAuthenticator]:
-    """Validate settings and construct the OIDC runtime plus the API authenticator."""
+) -> OidcAuthenticator:
+    """Validate settings and construct the API authenticator."""
     config = config_from_settings(settings)
     provider = OidcProvider(config, client, clock)
-    assert settings.session_secret
-    runtime = OidcRuntime(
-        provider, settings.database_url, settings.session_secret,
-        session_hours=settings.session_hours, secure_cookies=settings.secure_cookies, now=now,
-    )  # fmt: skip
-    authenticator = OidcAuthenticator(
+    return OidcAuthenticator(
         settings.database_url, provider, audience=config.audience, tenant_claim=config.tenant_claim
     )
-    return runtime, authenticator

@@ -61,8 +61,8 @@ USERS: Final[tuple[tuple[str, str, str], ...]] = (
     (ADMIN, "credit_admin", "Adam Reilly"),
     ("len", "lender_underwriter", "Len Marsh"),
 )
-DEFAULT_BASE_URL: Final = "http://127.0.0.1:8000"
-WORKBENCH_DEMO_URL: Final = "http://127.0.0.1:8001"  # the `workbench-demo` launch config
+DEFAULT_BASE_URL: Final = "http://localhost:3000"  # the web app (web/, `make web-dev`)
+WORKBENCH_DEMO_URL: Final = "http://127.0.0.1:8001"  # the `workbench-demo` launch config (API)
 
 # The check each plant must trip (tests/test_plants_matrix.py), asserted at seed time.
 EXPECTED_CHECK: Final[dict[str, str]] = {
@@ -637,5 +637,5 @@ def seed_demo(
                 described,
             )  # fmt: skip
         )
-    login = f"{base_url}/dev/login?tenant={tenant_id}"
+    login = f"{base_url}/sign-in?tenant={tenant_id}"
     return SeedSummary(tenant_id, tenant_name, login, tuple(seeded), effective, requested)

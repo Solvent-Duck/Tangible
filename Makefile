@@ -27,12 +27,13 @@ typecheck:
 check: lint typecheck test
 
 # Fresh demo tenant on synthetic data dated to now (needs `make db-up` and
-# data/processed/uci_lines.csv). Prints the dev-login URL. No model calls.
+# data/processed/uci_lines.csv). Prints the web app's sign-in URL. No model calls.
 # Live run (a separate step; about $1.50 per staged case on Bedrock):
 #   TANGIBLE_MODEL_BACKEND=bedrock TANGIBLE_BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0 \
 #   TANGIBLE_BEDROCK_REGION=us-east-2 TANGIBLE_PRICE_IN_PER_MTOK=3.30 TANGIBLE_PRICE_OUT_PER_MTOK=16.50 \
 #   AWS_PROFILE=tangible uv run --with "botocore[crt]" tangible-demo seed --run-agent
-# Then serve it with the `workbench-demo` launch config (port 8001, same env, dev auth).
+# Then serve the API with the `workbench-demo` launch config (port 8001, same env, dev auth)
+# and the web app with TANGIBLE_API_URL=http://127.0.0.1:8001 make web-dev.
 demo: migrate
 	uv run tangible-demo seed
 
