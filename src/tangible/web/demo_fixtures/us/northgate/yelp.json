@@ -1,0 +1,65 @@
+{
+ "businesses": [
+  {
+   "id": "northgate-phone-repair-tucson",
+   "name": "Northgate Phone Repair",
+   "location": {
+    "display_address": [
+     "4410 E Speedway Blvd",
+     "Tucson, AZ 85712"
+    ]
+   },
+   "display_phone": "(520) 555-0178",
+   "website": "https://northgatephonerepair.example",
+   "url": "https://www.yelp.com/biz/northgate-phone-repair-tucson",
+   "rating": 5.0,
+   "review_count": 212,
+   "is_closed": false,
+   "first_review_on": "2025-11-20",
+   "reviews": [
+    {
+     "text": "Best service ever!!!",
+     "rating": 5,
+     "time_created": "2026-09-30 12:00:00",
+     "owner_reply": false
+    },
+    {
+     "text": "Super fast, five stars!!",
+     "rating": 5,
+     "time_created": "2026-09-30 12:00:00",
+     "owner_reply": false
+    },
+    {
+     "text": "Recommend 100%!!!",
+     "rating": 5,
+     "time_created": "2026-09-29 12:00:00",
+     "owner_reply": false
+    }
+   ]
+  },
+  {
+   "id": "northgate-phone-repair-spokane",
+   "name": "Northgate Phone Repair",
+   "location": {
+    "display_address": [
+     "1180 N Monroe St",
+     "Spokane, WA 99201"
+    ]
+   },
+   "display_phone": "(509) 555-0133",
+   "url": "https://www.yelp.com/biz/northgate-phone-repair-spokane",
+   "rating": 4.5,
+   "review_count": 141,
+   "is_closed": false,
+   "first_review_on": "2010-01-09",
+   "reviews": [
+    {
+     "text": "Our regular repair shop for a decade.",
+     "rating": 5,
+     "time_created": "2026-08-01 12:00:00",
+     "owner_reply": true
+    }
+   ]
+  }
+ ]
+}

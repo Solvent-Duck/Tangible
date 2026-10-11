@@ -12,9 +12,9 @@ import yaml
 from tangible.policy import FindingInput, PolicyResult, evaluate, load_policy, parse_policy
 
 POLICIES = Path(__file__).parent.parent / "policies"
-NEW = load_policy(POLICIES / "default.yaml")
+NEW = load_policy(POLICIES / "default-0.3.0.yaml")
 OLD = load_policy(POLICIES / "default-0.2.2.yaml")
-RAW = yaml.safe_load((POLICIES / "default.yaml").read_text())
+RAW = yaml.safe_load((POLICIES / "default-0.3.0.yaml").read_text())
 
 METRICS = {
     "refund_rate": D("0.02"),

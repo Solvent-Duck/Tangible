@@ -20,6 +20,44 @@ values it saw.
 v1 is **US only**. The UK adapters in `web/sources.py` stay for the current demo set and are not
 extended.
 
+## v1 slice (hackathon)
+
+Built on branch `intangibles`, fixtures only (US, no network, no model calls):
+
+- **Data:** `Application` v2 fields (`legal_name`, `dba`, `address`, `phone`, `website`, `state`,
+  `naics`, plus `requested_amount` for `stock_cover`) and an `application` ledger table, so the
+  application finally round-trips through the database (older rows read the new fields as null).
+  Migration `0009_public_signals.sql` (0008 was taken) adds `application`, `entity_match` and
+  `public_signal` with RLS and append-only guards, and `confirm_match` / `reject_match` actions
+  on `underwriter_action` (new `entity_match_id` target). `PublicSignal` is a ledger type, loaded
+  with the ledger and filtered by `known_as_of` on `observed_at` per `(source, source_ref)`.
+- **Tools** (`agent/tools/intangibles.py`, provider field `ToolContext.signal_provider`):
+  `place_search` (google_places, yelp), `web_search`, `rdap_lookup`, `match_entity` (entity_match
+  v1: name / street address / phone / website domain, weights 0.4/0.3/0.2/0.1, one field alone
+  capped at 0.5), `record_signal` (refuses below 0.9 unless an analyst confirmed the match; the
+  stored data is the source call's logged result, never the agent's restatement).
+- **Rules:** `loyalty_mentions` v1 keyword rule; metric set `ms-3` (ms-2 + review_rating_shrunk,
+  review_count, owner_response_rate, years_trading, presence_channels, loyalty_mention_share,
+  stock_value_at_cost, stock_cover, entity_match_ok); check set `cs-5` (cs-4 + listing_closed,
+  review_volume_vs_orders, listing_identity_mismatch).
+- **Policy 0.4.0:** optional `uplift` (max_notches, ceiling, requires + `requires_for`, routes with
+  an `enabled` flag). Runs after bands, before the review cap, never after a knockout; records
+  every route's values and why it did not fire. Reputation ships disabled. 0.3.0 is kept as
+  `policies/default-0.3.0.yaml`; 0.2.2 and 0.3.0 replay byte-identically (golden hashes in
+  `tests/test_intangibles.py`).
+- **Demo data:** `web/demo_fixtures/us` (Juniper & Rye: loyalty; Copperline: stock; Northgate:
+  bought reviews plus a same-name Spokane decoy scoring 0.4, with an injection review) and
+  `demo/us_intangibles.py` (`stage_public_signals`: a scripted, model-free signal pre-run through
+  the logged tools). Not wired into `tangible-demo seed`, whose borrowers are UK.
+
+Cut or deferred: state SOS / OpenCorporates, CourtListener, `fetch_page`, the tool-less page
+extractor, social profiles, `local_press_mentions_3y`, `entity_status_inactive` and
+`public_bankruptcy` checks, the search sub-agent prompts and runner (parallel track), the case-page
+Intangibles panel and confirm/reject buttons, evidence-store copies of raw source responses (the
+sha256 is kept), the Wayback adapter, and live adapters. `stock_cover` divides by the
+application's requested amount (a metric cannot see the policy's band limits). Analyst match
+reviews are read as of load time, not as of the case date.
+
 ## What counts in the borrower's favor
 
 | Area | Signal | Where it comes from | Hard or soft |
@@ -102,7 +140,7 @@ scores. Review excerpts are matched for loyalty phrases by a **versioned keyword
 
 ## Data
 
-Migration `0008_public_signals.sql`, with RLS on `tenant_id` like every tenant table:
+Migration `0009_public_signals.sql` (0008 was taken), with RLS on `tenant_id` like every tenant table:
 
 | Table | Key columns | Notes |
 | --- | --- | --- |

@@ -1,0 +1,68 @@
+{
+ "places": [
+  {
+   "id": "gp-copperline-hardware-cleveland-ave",
+   "displayName": {
+    "text": "Copperline Hardware Supply"
+   },
+   "formattedAddress": "1450 Cleveland Ave, Columbus, OH 43211, USA",
+   "nationalPhoneNumber": "(614) 555-0187",
+   "websiteUri": "https://copperlinehardware.example/",
+   "googleMapsUri": "https://maps.google.com/?cid=1000000000000000002",
+   "rating": 4.3,
+   "userRatingCount": 64,
+   "businessStatus": "OPERATIONAL",
+   "firstReviewTime": "2013-03-02",
+   "reviews": [
+    {
+     "text": {
+      "text": "Huge stock of plumbing fittings, had exactly the part I needed."
+     },
+     "rating": 5,
+     "publishTime": "2026-09-18T15:00:00Z",
+     "ownerReply": true
+    },
+    {
+     "text": {
+      "text": "Contractor pricing is fair."
+     },
+     "rating": 4,
+     "publishTime": "2026-08-30T15:00:00Z",
+     "ownerReply": false
+    },
+    {
+     "text": {
+      "text": "Been buying from them for a decade, always in stock."
+     },
+     "rating": 5,
+     "publishTime": "2026-08-04T15:00:00Z",
+     "ownerReply": true
+    },
+    {
+     "text": {
+      "text": "Checkout was slow."
+     },
+     "rating": 3,
+     "publishTime": "2026-07-21T15:00:00Z",
+     "ownerReply": false
+    },
+    {
+     "text": {
+      "text": "Knowledgeable staff, big warehouse."
+     },
+     "rating": 4,
+     "publishTime": "2026-06-12T15:00:00Z",
+     "ownerReply": false
+    },
+    {
+     "text": {
+      "text": "Found specialty fasteners nobody else carries."
+     },
+     "rating": 5,
+     "publishTime": "2026-05-28T15:00:00Z",
+     "ownerReply": true
+    }
+   ]
+  }
+ ]
+}

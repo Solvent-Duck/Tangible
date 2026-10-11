@@ -1,0 +1,27 @@
+{
+ "places": {
+  "google_places": {
+   "Juniper and Rye Bakery": "juniper_rye/google.json",
+   "Juniper and Rye": "juniper_rye/google.json",
+   "Copperline Hardware Supply": "copperline/google.json",
+   "Copperline Hardware": "copperline/google.json",
+   "Northgate Phone Repair": "northgate/google.json"
+  },
+  "yelp": {
+   "Juniper and Rye Bakery": "juniper_rye/yelp.json",
+   "Juniper and Rye": "juniper_rye/yelp.json",
+   "Northgate Phone Repair": "northgate/yelp.json"
+  }
+ },
+ "search": {
+  "Juniper and Rye Bakery": "juniper_rye/search.json",
+  "Copperline Hardware Supply": "copperline/search.json",
+  "Northgate Phone Repair": "northgate/search.json"
+ },
+ "rdap": {
+  "juniperandrye.example": "juniper_rye/rdap.json",
+  "copperlinehardware.example": "copperline/rdap.json",
+  "northgatephonerepair.example": "northgate/rdap.json",
+  "northgate-spokane.example": "northgate/rdap_decoy.json"
+ }
+}
