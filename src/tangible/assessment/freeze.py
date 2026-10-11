@@ -85,7 +85,9 @@ def freeze(
             raise ValueError(f"case {case.id} has no baseline for metric {key} v{version}")
         metric_rows.append((str(row[0]), key, row[1]))
 
-    findings = load_findings(conn, case_id=case.id)
+    # Current findings only: a corrected finding replaces the one it supersedes, in the policy
+    # inputs and in the assessment items alike (replay reads those items back as frozen).
+    findings = load_findings(conn, case_id=case.id, current_only=True)
     now_row = conn.execute("SELECT clock_timestamp()").fetchone()
     assert now_row
     now: datetime = now_row[0]

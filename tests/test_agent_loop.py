@@ -121,12 +121,16 @@ def run(
     )
 
 
-def tool_output_texts(call_: RecordedCall) -> list[str]:
+def tool_output_texts_from(messages: list[dict[str, Any]]) -> list[str]:
     out: list[str] = []
-    for m in call_.messages:
+    for m in messages:
         if isinstance(m["content"], list):
             out += [b["content"] for b in m["content"] if b["type"] == "tool_result"]
     return out
+
+
+def tool_output_texts(call_: RecordedCall) -> list[str]:
+    return tool_output_texts_from(call_.messages)
 
 
 # ---------------------------------------------------------------- plan
@@ -229,7 +233,7 @@ def test_scripted_run_end_to_end(hw: World, tmp_path: Path) -> None:
         )
         res = run(conn, case, client, tmp_path)
         assert res.stop_reason == "end_turn" and res.steps == 4
-        assert res.prompt_versions == {"system": "v1", "investigate": "v3", "plan": "v2"}
+        assert res.prompt_versions == {"system": "v1", "investigate": "v4", "plan": "v3"}
         assert res.model_id == "scripted-1"
         assert len(res.finding_ids) == 1 and res.unverified_finding_ids == []
         (f,) = [f for f in load_findings(conn, case_id=case.id) if f.origin == "model"]
@@ -311,18 +315,117 @@ def finding_call(summary: str, slug: str, cid: str) -> Step:
     )
 
 
-def test_loop_uses_investigate_v3(hw: World, tmp_path: Path) -> None:
+def test_loop_uses_investigate_v4_and_plan_v3(hw: World, tmp_path: Path) -> None:
     with tenant_session(hw.url, hw.tenant) as conn:
         case = approved_case(conn, hw)
+        # approved_case proposed the plan: that call is logged with plan@v3 and its sha
+        v3 = load_prompt("plan", 3)
+        assert conn.execute(
+            "SELECT prompt_version, prompt_sha256 FROM model_call WHERE prompt_key = 'plan'"
+        ).fetchone() == ("3", v3.sha256)
         client = ScriptedClient([say("done")])
         res = run(conn, case, client, tmp_path)
-        assert res.prompt_versions["investigate"] == "v3"
-        v3 = load_prompt("investigate", 3)
-        assert v3.text in client.calls[0].system
+        assert res.prompt_versions["investigate"] == "v4"
+        v4 = load_prompt("investigate", 4)
+        assert v4.text in client.calls[0].system
         row = conn.execute(
             "SELECT prompt_version, prompt_sha256 FROM model_call WHERE prompt_key = 'investigate'"
         ).fetchone()
-        assert row == ("3", v3.sha256)
+        assert row == ("4", v4.sha256)
+
+
+def test_first_message_names_the_borrower_and_lists_current_findings_only(
+    hw: World, tmp_path: Path
+) -> None:
+    with tenant_session(hw.url, hw.tenant) as conn:
+        case = approved_case(conn, hw)
+        client = FnClient(
+            [
+                lambda m: call("query_ledger", {"sql": "SELECT 41 AS n"}, "q1"),
+                finding_call("Deposits were short by 99,999.99.", "gap", "r1"),
+                lambda m: say("done"),
+            ]
+        )
+        run(conn, case, client, tmp_path)
+        (old,) = [f for f in load_findings(conn, case_id=case.id) if f.origin == "model"]
+
+        # Run 2 (a send-back) replaces it; run 3 must list only the correction.
+        client2 = FnClient(
+            [
+                lambda m: call("query_ledger", {"sql": "SELECT 41 AS n"}, "q2"),
+                lambda m: call(
+                    "record_finding",
+                    {
+                        "slug": "gap-v2",
+                        "summary": "The query counted 41 rows.",
+                        "severity": "review",
+                        "pillar": "integrity",
+                        "direction": "raises_risk",
+                        "tool_call_ids": [last_call_id(m)],
+                        "replaces": old.id,
+                    },
+                    "r2",
+                ),
+                lambda m: say("done"),
+            ]
+        )
+        run(conn, case, client2, tmp_path)
+        first2 = client2.calls[0].messages[0]["content"]
+        assert f"id {old.id}" in first2  # run 2 sees the original, with its id
+        assert "Borrower name on file" in first2
+
+        client3 = ScriptedClient([say("done")])
+        run(conn, case, client3, tmp_path)
+        first3 = client3.calls[0].messages[0]["content"]
+        assert "gap-v2" in first3 and "Deposits were short" not in first3
+        assert f"id {old.id}" not in first3
+
+
+def test_agent_replaces_an_unverified_finding(hw: World, tmp_path: Path) -> None:
+    with tenant_session(hw.url, hw.tenant) as conn:
+        case = approved_case(conn, hw)
+
+        def corrected(m: list[dict[str, Any]]) -> ModelResponse:
+            # The previous tool_output is the UNVERIFIED record_finding result; its finding_id is
+            # what the model passes as `replaces`.
+            prev = tool_output_texts_from(m)[-2]
+            assert "UNVERIFIED" in prev and "replaces set to" in prev
+            old_id = re.search(r'"finding_id": "([0-9a-f-]{36})"', prev)
+            assert old_id
+            return call(
+                "record_finding",
+                {
+                    "slug": "gap-corrected",
+                    "summary": "The query counted 41 rows.",
+                    "severity": "review",
+                    "pillar": "integrity",
+                    "direction": "raises_risk",
+                    "tool_call_ids": [last_call_id(m)],
+                    "replaces": old_id.group(1),
+                },
+                "r2",
+            )
+
+        client = FnClient(
+            [
+                lambda m: call("query_ledger", {"sql": "SELECT 41 AS n"}, "q1"),
+                finding_call("Deposits were short by 99,999.99, or 53 times usual.", "gap", "r1"),
+                lambda m: call("query_ledger", {"sql": "SELECT 41 AS n"}, "q2"),
+                corrected,
+                lambda m: say("done"),
+            ]
+        )
+        res = run(conn, case, client, tmp_path)
+        allm = [f for f in load_findings(conn, case_id=case.id) if f.origin == "model"]
+        assert len(allm) == 2
+        # rows of one transaction share created_at, so find them by the link, not by position
+        (new,) = [f for f in allm if f.replaces_id]
+        (old,) = [f for f in allm if f.id == new.replaces_id]
+        assert old.verified is False and new.verified is True and new.replaces_id == old.id
+        # the run reports the current finding only, and nothing unverified is left current
+        assert res.finding_ids == [new.id] and res.unverified_finding_ids == []
+        final = tool_output_texts(client.calls[4])[-1]
+        assert "recorded; verified" in final and new.id in final
 
 
 def test_record_finding_feedback_names_unmatched_numbers(hw: World, tmp_path: Path) -> None:
