@@ -3,6 +3,7 @@
 import dataclasses
 import json
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -13,10 +14,15 @@ from fastapi.testclient import TestClient
 
 from tangible.agent.llm import ModelConfigError, ModelResponse, NullClient, Pricing, ScriptedClient
 from tangible.agent.progress import FEED
+from tangible.agent.tools import call_tool, open_context
 from tangible.checks.registry import FindingDraft
-from tangible.db.cases import set_case_status
+from tangible.db.cases import get_case, set_case_status
 from tangible.db.findings import insert_finding
 from tangible.db.session import tenant_session
+from tangible.db.signals import insert_application
+from tangible.demo.us_intangibles import BY_KEY
+from tangible.policy import load_policy
+from tangible.web.signals import demo_signal_provider
 from tangible.workbench.app import create_app
 from tangible.workbench.auth import DevHeaderAuthenticator
 from tangible.workbench.settings import Settings
@@ -536,3 +542,25 @@ def test_case_page_shows_the_agent_team(stack: Stack) -> None:  # noqa: F811
     page = ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
     assert '<span class="engine-badge">Strands Agents</span>' in page
     assert "Agent team" in page and "Lead investigator" in page and "1 step, 0 tool calls" in page
+
+
+def test_case_page_lists_public_signals_with_match_scores(stack: Stack, tmp_path: Path) -> None:  # noqa: F811
+    case_id = make_case(stack)
+    with tenant_session(stack.w.url, stack.w.tenant) as conn:
+        case = get_case(conn, case_id)
+        app = BY_KEY["northgate"].application(case.as_of - timedelta(days=1))
+        insert_application(conn, case.tenant_id, case.borrower_id, app)
+        ctx = open_context(
+            conn, case, load_policy(POLICY_PATH), tmp_path,
+            signal_provider=demo_signal_provider(clock=lambda: case.as_of),
+        )  # fmt: skip
+        s = call_tool(
+            ctx, "place_search", {"source": "google_places", "query": "Northgate Phone Repair"}
+        )
+        for ref in ("gp-northgate-phone-repair-speedway", "gp-northgate-phone-repair-spokane"):
+            m = call_tool(ctx, "match_entity", {"source_call_id": s.call_id, "source_ref": ref})
+            call_tool(ctx, "record_signal", {"match_id": m.result["match_id"]})
+    page = ui(stack, "GET", f"/cases/{case_id}", "ana", 200).text
+    assert "Public signals" in page and "1.0000" in page and "0.4000" in page
+    assert '<span class="sev info">recorded</span>' in page
+    assert '<span class="sev hold">refused: below 0.9</span>' in page

@@ -443,8 +443,43 @@ def get_case_detail(
             (case.id,),
         ).fetchone()
         out["last_investigation"] = _j({**stop[0], "at": stop[1]}) if stop else None
+        out["intangibles"] = _intangibles(conn, case.id)
         out.update(_run_notices(conn, case))
     audit.record(conn, p, "view", "case", case.id)
+    return out
+
+
+def _intangibles(conn: Conn, case_id: str) -> list[dict[str, Any]]:
+    """Each public source result the search scored for this case: best match score (computed by
+    entity_match, never the agent) and whether it is on file as a signal."""
+    rows = conn.execute(
+        "SELECT em.source, em.source_ref, max(em.score), "
+        "(array_agg(em.candidate ORDER BY em.score DESC))[1], "
+        "EXISTS (SELECT 1 FROM public_signal ps WHERE ps.case_id = em.case_id "
+        "        AND ps.source = em.source AND ps.source_ref = em.source_ref) "
+        "FROM entity_match em WHERE em.case_id = %s "
+        "GROUP BY em.case_id, em.source, em.source_ref ORDER BY max(em.score) DESC, em.source",
+        (case_id,),
+    ).fetchall()
+    out = []
+    for source, ref, score, cand, on_file in rows:
+        data = (cand or {}).get("data") or {}
+        out.append(
+            _j(
+                {
+                    "source": source,
+                    "source_ref": ref,
+                    "score": score,
+                    "on_file": on_file,
+                    "name": data.get("name") or data.get("domain") or ref,
+                    "address": data.get("address"),
+                    "rating": data.get("rating"),
+                    "review_count": data.get("review_count"),
+                    "status": data.get("business_status"),
+                    "registered_on": data.get("registered_on"),
+                }
+            )
+        )
     return out
 
 

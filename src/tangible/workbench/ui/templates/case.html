@@ -65,6 +65,30 @@
 </section>
 {% endif %}
 
+{% if is_analyst and c.intangibles %}
+<section class="card" aria-labelledby="pi-h">
+  <div class="card-head">
+    <h2 id="pi-h">Public signals <span class="count">{{ c.intangibles | length }}</span></h2>
+    <span class="help">Found by the search agents; match scores are computed by entity_match v1, not the agent</span>
+  </div>
+  <table class="table hover"><caption class="sr">Public source results scored for this case</caption>
+  <thead><tr><th scope="col">Source</th><th scope="col">Result</th><th scope="col" class="num">Match</th><th scope="col">On file</th></tr></thead>
+  <tbody>
+  {% for r in c.intangibles %}
+  <tr>
+    <td>{{ r.source | replace('_', ' ') }}</td>
+    <td><strong>{{ r.name }}</strong>{% if r.address %}<br><span class="help">{{ r.address }}</span>{% endif %}
+      {% if r.rating is not none %}<br><span class="help">{{ r.rating }} stars, {{ r.review_count }} reviews{% if r.status and r.status != 'OPERATIONAL' %}, {{ r.status | lower | replace('_', ' ') }}{% endif %}</span>{% endif %}
+      {% if r.registered_on %}<br><span class="help">domain registered {{ r.registered_on }}</span>{% endif %}</td>
+    <td class="num">{{ r.score }}</td>
+    <td>{% if r.on_file %}<span class="sev info">recorded</span>{% elif r.score | float < 0.9 %}<span class="sev hold">refused: below 0.9</span>{% else %}not recorded{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody></table>
+  <p class="help card-body mb-0">Only recorded results reach the metrics; a refused listing needs an analyst to confirm it is this business.</p>
+</section>
+{% endif %}
+
 <section class="card" aria-labelledby="m-h">
   <div class="card-head">
     <h2 id="m-h">Baseline metrics {% if metrics %}<span class="count">{{ metrics | length }}</span>{% endif %}</h2>
