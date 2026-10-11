@@ -1,0 +1,59 @@
+{
+ "businesses": [
+  {
+   "id": "juniper-and-rye-bakery-portland",
+   "name": "Juniper & Rye Bakery",
+   "location": {
+    "display_address": [
+     "2231 SE Division St",
+     "Portland, OR 97202"
+    ]
+   },
+   "display_phone": "(503) 555-0142",
+   "website": "https://juniperandrye.example",
+   "url": "https://www.yelp.com/biz/juniper-and-rye-bakery-portland",
+   "rating": 4.5,
+   "review_count": 98,
+   "is_closed": false,
+   "first_review_on": "2017-06-03",
+   "reviews": [
+    {
+     "text": "Came back three weekends in a row for the morning buns.",
+     "rating": 5,
+     "time_created": "2026-09-12 12:00:00",
+     "owner_reply": true
+    },
+    {
+     "text": "Solid neighborhood bakery.",
+     "rating": 4,
+     "time_created": "2026-08-21 12:00:00",
+     "owner_reply": true
+    },
+    {
+     "text": "Bread sold out by noon, plan ahead.",
+     "rating": 4,
+     "time_created": "2026-08-02 12:00:00",
+     "owner_reply": false
+    },
+    {
+     "text": "I've been ordering from them for years, never had a bad loaf.",
+     "rating": 5,
+     "time_created": "2026-07-09 12:00:00",
+     "owner_reply": true
+    },
+    {
+     "text": "Nice but parking is hard.",
+     "rating": 3,
+     "time_created": "2026-06-15 12:00:00",
+     "owner_reply": false
+    },
+    {
+     "text": "Friendly staff and great pastries.",
+     "rating": 5,
+     "time_created": "2026-05-30 12:00:00",
+     "owner_reply": true
+    }
+   ]
+  }
+ ]
+}

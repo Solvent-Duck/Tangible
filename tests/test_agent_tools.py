@@ -86,6 +86,7 @@ def test_definitions() -> None:
     assert names == {
         "query_ledger", "compute_metric", "run_check", "run_analysis",
         "record_finding", "draft_borrower_question", "web_lookup", "read_document",
+        "place_search", "web_search", "rdap_lookup", "match_entity", "record_signal",
     }  # fmt: skip
     rf = next(d for d in tool_definitions() if d["name"] == "record_finding")
     assert set(rf["input_schema"]["properties"]).isdisjoint({"band", "limit", "value"})
