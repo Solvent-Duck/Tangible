@@ -10,9 +10,19 @@ from fastapi.responses import JSONResponse
 
 from tangible.db.migrate import migrate
 from tangible.workbench import services
-from tangible.workbench.api import assessments, backtest, cases, dashboard, invites, me, onboarding
+from tangible.workbench.api import (
+    assessments,
+    backtest,
+    cases,
+    dashboard,
+    demo_login,
+    invites,
+    me,
+    onboarding,
+)
 from tangible.workbench.auth import Authenticator, DevHeaderAuthenticator, OidcAuthenticator
 from tangible.workbench.clerk import build_clerk
+from tangible.workbench.demo_login import DemoLoginAuthenticator
 from tangible.workbench.gate import PasswordGate
 from tangible.workbench.oidc import build_oidc
 from tangible.workbench.ratelimit import RateLimit
@@ -46,10 +56,14 @@ def create_app(
             authenticator = build_clerk(settings, http_client)
         else:
             authenticator = build_oidc(settings, http_client)
+    demo = settings.build_demo_login()
+    if demo is not None:
+        authenticator = DemoLoginAuthenticator(authenticator, settings.database_url, demo)
     app = FastAPI(title="Tangible workbench API")
     app.state.settings = settings
     app.state.authenticator = authenticator
     app.state.public_limit = RateLimit(per_minute=settings.public_rate_per_minute)
+    app.state.demo_login = demo
 
     async def domain_error(_: Request, exc: Exception) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=_STATUS[type(exc)])
@@ -76,6 +90,7 @@ def create_app(
     app.include_router(invites.router)
     app.include_router(onboarding.router)
     app.include_router(backtest.router)
+    app.include_router(demo_login.router)
     if settings.access_password:
         app.add_middleware(PasswordGate, password=settings.access_password)
     return app

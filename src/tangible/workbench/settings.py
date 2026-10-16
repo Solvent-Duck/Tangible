@@ -10,6 +10,7 @@ from tangible.agent.llm import ModelClient, Pricing, client_from_env
 from tangible.config import database_url
 from tangible.web.fixtures import demo_provider
 from tangible.web.provider import WebProvider
+from tangible.workbench.demo_login import DemoLogin
 
 _DEFAULT_POLICY = Path(__file__).resolve().parents[3] / "policies" / "default.yaml"
 
@@ -60,11 +61,31 @@ class Settings:
     smtp_url: str | None = None
     # Requests per minute per client IP on the public invite routes (preview, accept).
     public_rate_per_minute: int = 30
+    # --- Shared demo login (clerk/oidc only; see demo_login.py): off unless all three are set.
+    demo_login_user: str | None = None
+    demo_login_password: str | None = field(default=None, repr=False)
+    demo_login_secret: str | None = field(default=None, repr=False)
+    demo_login_subject: str = "demo:credit-admin"
 
     @property
     def auth_mode(self) -> str:
         """ "dev" when TANGIBLE_DEV_AUTH=1 (dev_auth); otherwise `auth_backend` (oidc or clerk)."""
         return "dev" if self.dev_auth else self.auth_backend
+
+    def build_demo_login(self) -> DemoLogin | None:
+        """The shared demo login, or None when it is not (fully) configured."""
+        parts = (self.demo_login_user, self.demo_login_password, self.demo_login_secret)
+        if not any(parts):
+            return None
+        if not all(parts):
+            raise ValueError("TANGIBLE_DEMO_LOGIN_USER, _PASSWORD and _SECRET must be set together")
+        if self.auth_mode == "dev":
+            raise ValueError("TANGIBLE_DEMO_LOGIN_* is for clerk/oidc deployments, not dev auth")
+        assert self.demo_login_user and self.demo_login_password and self.demo_login_secret
+        return DemoLogin(
+            self.demo_login_user, self.demo_login_password, self.demo_login_secret,
+            self.demo_login_subject,
+        )  # fmt: skip
 
     def build_web_provider(self) -> WebProvider | None:
         """The provider handed to the agent's tools; None when web lookup is off."""
@@ -101,10 +122,15 @@ class Settings:
             invite_days=int(env.get("TANGIBLE_INVITE_DAYS", "14")),
             smtp_url=env.get("TANGIBLE_SMTP_URL") or None,
             public_rate_per_minute=int(env.get("TANGIBLE_PUBLIC_RATE_PER_MINUTE", "30")),
+            demo_login_user=env.get("TANGIBLE_DEMO_LOGIN_USER") or None,
+            demo_login_password=env.get("TANGIBLE_DEMO_LOGIN_PASSWORD") or None,
+            demo_login_secret=env.get("TANGIBLE_DEMO_LOGIN_SECRET") or None,
+            demo_login_subject=env.get("TANGIBLE_DEMO_LOGIN_SUBJECT") or "demo:credit-admin",
             pricing=Pricing(
                 Decimal(env.get("TANGIBLE_PRICE_IN_PER_MTOK", "0")),
                 Decimal(env.get("TANGIBLE_PRICE_OUT_PER_MTOK", "0")),
             ),
         )
         settings.build_web_provider()  # fail at startup on a bad TANGIBLE_WEB_* setting
+        settings.build_demo_login()  # ... or a half-set TANGIBLE_DEMO_LOGIN_*
         return settings
