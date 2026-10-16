@@ -24,6 +24,7 @@ The hosted environment is the Railway project `tangible`, environment `productio
 | `FORWARDED_ALLOW_IPS` | `*` (trust the platform proxy for client IPs; the rate limit uses them) |
 | `TANGIBLE_EVIDENCE_DIR` | Set by the image to `/data/evidence` |
 | `TANGIBLE_BACKTEST_REPORT` | `/data/backtest/report.json` (the Backtest tab; the image has no `data/`) |
+| `TANGIBLE_DEMO_LOGIN_USER`, `_PASSWORD`, `_SECRET` | Optional shared tester login (secret 32+ chars). Signs in as `demo:credit-admin` (`TANGIBLE_DEMO_LOGIN_SUBJECT`); link it with `tangible-demo seed --link-subject demo:credit-admin`. Changing the secret ends every demo session. |
 
 ### `web`
 
@@ -32,6 +33,7 @@ The hosted environment is the Railway project `tangible`, environment `productio
 | `NEXT_PUBLIC_AUTH_MODE=clerk` | Build argument |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Build argument |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up` | Build arguments |
+| `NEXT_PUBLIC_DEMO_LOGIN=1` | Build argument: shows the "Demo access" form on `/sign-in` |
 | `TANGIBLE_API_URL` | Build argument: the API's public URL. The `/api` rewrite is fixed at build time. |
 | `CLERK_SECRET_KEY` | Runtime |
 | `PORT=3000` | Runtime |

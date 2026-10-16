@@ -5,6 +5,8 @@ import { createContext, useContext } from "react";
 /** What the rest of the app needs from auth, whichever provider is behind it. */
 export type AuthState = {
   mode: "dev" | "clerk";
+  /** Signed in with the shared demo login rather than a Clerk account. */
+  demo?: boolean;
   ready: boolean;
   signedIn: boolean;
   /** Headers that authenticate an API call (Bearer token, or the dev headers). */

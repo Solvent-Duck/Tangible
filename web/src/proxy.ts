@@ -5,7 +5,12 @@ import { NextResponse } from "next/server";
 // and the landing page stay public. Dev mode: nothing to do here (the dev picker is client-side).
 const isProtected = createRouteMatcher(["/app(.*)", "/onboarding(.*)"]);
 
+// A shared demo login (NEXT_PUBLIC_DEMO_LOGIN=1) is not a Clerk session: its cookie only lets the
+// page load; the API checks the demo token itself.
+const demoLogin = process.env.NEXT_PUBLIC_DEMO_LOGIN === "1";
+
 const clerk = clerkMiddleware(async (auth, req) => {
+  if (demoLogin && req.cookies.get("tangible_demo")?.value) return;
   if (isProtected(req)) await auth.protect();
 });
 
